@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -480,7 +480,7 @@
       "facing": "S",
       "holdUntilWithin": 6,
       "stats": {
-        "hp": 34,
+        "hp": 30,
         "atk": 9,
         "mag": 2,
         "def": 5,
@@ -547,30 +547,6 @@
       "pos": [
         8,
         0
-      ],
-      "facing": "S",
-      "prefersHeight": 2,
-      "stats": {
-        "hp": 20,
-        "atk": 6,
-        "mag": 1,
-        "def": 2,
-        "res": 3,
-        "spd": 7,
-        "move": 4,
-        "jump": 2,
-        "eva": 10
-      },
-      "abilities": [
-        "shoot"
-      ]
-    },
-    {
-      "id": "archerB",
-      "name": "Court Archer",
-      "pos": [
-        9,
-        1
       ],
       "facing": "S",
       "prefersHeight": 2,

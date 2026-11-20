@@ -21,7 +21,7 @@ describe('map parsing', () => {
   it('places the squad and patrol from the data file', () => {
     const { units } = millFordSetup();
     expect(units.filter((u) => u.team === 'player').map((u) => u.id)).toEqual(['maren', 'tobin', 'wren', 'calla']);
-    expect(units.filter((u) => u.team === 'enemy')).toHaveLength(6);
+    expect(units.filter((u) => u.team === 'enemy')).toHaveLength(5);
   });
 });
 
