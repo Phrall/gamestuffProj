@@ -369,6 +369,21 @@ def sfx_unit_down():
     return reverb(out, 0.3, 1.6)
 
 
+def sfx_vow_lapsed():
+    # Neutral: the battle ended before the vow resolved. A single soft hum on an
+    # unresolved sus2 (D-E-A) that dims and drifts down a little as it fades.
+    # No drum, no crack, no swell, so it reads as "nothing gained, nothing lost".
+    dur = 2.2
+    out = np.zeros(int(dur * SR))
+    for k, m in enumerate((62, 64, 69)):
+        place(out, hum(midi_hz(m), 2.0, 0.08, 1.6, "oo") * 0.35, 0.0)
+    t = t_axis(1.8)
+    bell = np.sin(2 * np.pi * midi_hz(81) * (1 - 0.02 * t / 1.8) * t) * env_exp(len(t), 0.5) * 0.12
+    place(out, bell, 0.0)
+    out = lp(out, 1600) * np.linspace(1, 0.6, len(out))
+    return reverb(out, 0.35, 1.8)
+
+
 # ----------------------------------------------------------------- MUSIC
 # Original compositions written for Oathbound. Key centre D (dorian/minor for
 # battle, major/mixolydian for camp). Folk palette: plucked strings, bowed
@@ -544,6 +559,11 @@ def main():
         x = normalize(x, -1.5)
         encode(name, x, OUT_MUS, music=True)
         print("music", name, f"{len(x) / SR:.1f}s")
+
+    # added after the first batch; generated last so the seeded noise of the
+    # sounds above stays unchanged
+    encode("vow_lapsed", fade(normalize(sfx_vow_lapsed(), -6)), OUT_SFX)
+    print("sfx vow_lapsed")
 
 
 if __name__ == "__main__":

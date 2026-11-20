@@ -3,7 +3,7 @@
 Original folk-style audio for the prototype battle: sparse plucked and bowed strings, low frame drums and choir hums, all synthesized in code by `tools/audio/generate_audio.py`. No samples or outside recordings are used.
 
 - `music/`: battle loop (57.6 s, 100 BPM, loops seamlessly), camp loop (37.9 s, 76 BPM, 3/4), victory and defeat stings (4.5 s).
-- `sfx/`: 16 sounds for UI, selection, movement, attacks, abilities, the vow cycle and unit down.
+- `sfx/`: 17 sounds for UI, selection, movement, attacks, abilities, the vow cycle and unit down.
 - `audio_manifest.json`: keys, loop flags, suggested volumes and when to play each sound.
 
 Every sound ships as `.ogg` (load first) with an `.mp3` fallback for older Safari. One format of everything is about 1.3 MB.

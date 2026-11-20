@@ -21,6 +21,7 @@
     "vow_sworn":    { "volume": 0.9, "use": "Vow confirmed on the deployment screen" },
     "vow_kept":     { "volume": 1.0, "duck_music": true, "use": "SIGNATURE: vow kept (Reckoning screen or battle end)" },
     "vow_broken":   { "volume": 1.0, "duck_music": true, "use": "SIGNATURE: vow cracks mid-battle" },
+    "vow_lapsed":   { "volume": 0.8, "use": "Battle ended before the vow resolved (no gain, no penalty)" },
     "unit_down":    { "volume": 0.9, "use": "A unit is downed" }
   }
 }
