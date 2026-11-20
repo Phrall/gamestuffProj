@@ -1,25 +1,32 @@
-# gamestuffProj
+# Oathbound
 
-Game prototype
+A browser tactics RPG where units grow into new classes by keeping the vows they swear before each battle.
 
-Phaser 3 (HTML5/JavaScript), no build step.
+Built with Phaser 3, TypeScript and Vite.
 
-## Run it
-ES modules need a local web server (opening index.html directly won't work):
+## Play
+Once Pages is enabled, every merge to `main` is published to
+https://phrall.github.io/gamestuffProj/
+
+## Run locally
+Requires [Node.js](https://nodejs.org/) 20.19 or newer.
 
     git clone https://github.com/Phrall/gamestuffProj.git
     cd gamestuffProj
-    python -m http.server 8000
+    npm install
+    npm run dev
 
-Then open http://localhost:8000.
+The game opens at http://localhost:5173 and reloads as you edit.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server with hot reload |
+| `npm test` | Unit tests (Vitest) |
+| `npm run typecheck` | TypeScript check |
+| `npm run build` | Production build into `dist/` |
 
 ## Layout
-- `index.html` loads Phaser 3.80.1 from a CDN and `src/main.js`
-- `src/main.js` game config: (960x540, arcade physics, auto-scaling)
-- `src/scenes/BootScene.js` asset loading (placeholder textures for now)
-- `src/scenes/MenuScene.js` title screen
-- `src/scenes/GameScene.js` gameplay (placeholder movable square)
-- `assets/` final sprites, audio, etc.
-
-## Next
-Swap in real gameplay once the concept is chosen. If the project grows, move to Vite + npm for bundling and hot reload.
+- `src/main.ts` game config and scene list
+- `src/scenes/` Phaser scenes (boot, menu, game)
+- `public/assets/` art and audio, served as-is
+- `.github/workflows/` CI (typecheck, test, build) and Pages deploy
