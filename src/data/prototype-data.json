@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -93,7 +93,7 @@
       "oathLine": "No blade passes me to them.",
       "oathClass": "Warden",
       "shadowClass": "Forsworn",
-      "goal": 3,
+      "goal": 2,
       "progress": "interceptedAttack",
       "breakOn": "allyDownedWithin",
       "breakRadius": 2,
@@ -125,7 +125,7 @@
       "progress": "defeatWithNoAllyAdjacent",
       "breakOn": "defeatWithAllyAdjacent",
       "whileSworn": {
-        "atkWhenAlone": 1
+        "atkWhenAlone": 3
       },
       "kept": {
         "resolve": 2,
@@ -498,7 +498,7 @@
       "facing": "S",
       "holdUntilWithin": 6,
       "stats": {
-        "hp": 30,
+        "hp": 28,
         "atk": 9,
         "mag": 2,
         "def": 5,
@@ -541,7 +541,7 @@
       "name": "Court Spearman",
       "pos": [
         7,
-        3
+        2
       ],
       "facing": "S",
       "stats": {
@@ -595,7 +595,7 @@
       "stats": {
         "hp": 18,
         "atk": 2,
-        "mag": 7,
+        "mag": 6,
         "def": 1,
         "res": 5,
         "spd": 5,

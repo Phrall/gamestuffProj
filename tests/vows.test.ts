@@ -3,6 +3,7 @@ import { endTurn, getUnit, startNextTurn, useAbility } from '../src/core/battle'
 import { previewAction } from '../src/core/combat';
 import { effectiveStats } from '../src/core/stats';
 import { reckonVows, swearVow } from '../src/core/vows';
+import { VOWS } from '../src/data';
 import { battle, flatRows, unit } from './helpers';
 
 const STRONG = { hp: 99, atk: 40, mag: 0, def: 0, res: 0, spd: 20, move: 4, jump: 2, eva: 0 };
@@ -35,20 +36,21 @@ describe('Bulwark (§9)', () => {
     expect(previewAction(s, bow, 'volley', { x: 2, y: 1 }).interceptedBy).toBeUndefined();
   });
 
-  it('3 intercepts fulfil it (+10 morale); Guard keeps working after', () => {
+  it('the goal number of intercepts fulfils it (+10 morale); Guard keeps working after', () => {
     const s = battle(flatRows(5, 3), [
       unit('maren', 'player', 'sellsword', 1, 1, 'E', { stats: { ...DUMMY, hp: 200, spd: 1 } }),
       unit('calla', 'player', 'hedgeMage', 2, 1, 'N', { stats: { ...DUMMY, spd: 1 } }),
       unit('e', 'enemy', 'hedgeMage', 2, 2, 'N', { stats: { ...STRONG, mag: 1 } }),
     ]);
     swearVow(s, 'maren', 'bulwark');
-    for (let i = 0; i < 4; i++) {
+    const goal = VOWS.bulwark.goal;
+    for (let i = 0; i < goal + 1; i++) {
       startNextTurn(s);
       useAbility(s, 'e', 'spark', { x: 2, y: 1 });
       endTurn(s);
     }
     expect(s.vows.maren!.status).toBe('fulfilled');
-    expect(s.vows.maren!.progress).toBe(3);
+    expect(s.vows.maren!.progress).toBe(goal);
     expect(getUnit(s, 'calla').hp).toBe(getUnit(s, 'calla').base.hp);
     expect(s.morale.player).toBe(60);
   });
@@ -72,7 +74,7 @@ describe('Bulwark (§9)', () => {
 });
 
 describe('Lone Blade (§9)', () => {
-  it('+1 Atk only with no ally adjacent', () => {
+  it('Atk bonus only with no ally adjacent', () => {
     const s = battle(flatRows(5, 3), [
       unit('tobin', 'player', 'sellsword', 1, 1, 'E'),
       unit('e', 'enemy', 'sellsword', 2, 1, 'W', { stats: DUMMY }),
@@ -80,7 +82,7 @@ describe('Lone Blade (§9)', () => {
     ]);
     swearVow(s, 'tobin', 'loneBlade');
     const tobin = getUnit(s, 'tobin');
-    expect(previewAction(s, tobin, 'strike', { x: 2, y: 1 }).victims[0]!.damage).toBe(5 + 8 + 1);
+    expect(previewAction(s, tobin, 'strike', { x: 2, y: 1 }).victims[0]!.damage).toBe(5 + 8 + VOWS.loneBlade.whileSworn.atkWhenAlone);
     getUnit(s, 'ally').pos = { x: 1, y: 2 };
     expect(previewAction(s, tobin, 'strike', { x: 2, y: 1 }).victims[0]!.damage).toBe(5 + 8);
   });
