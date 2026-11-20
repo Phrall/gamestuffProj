@@ -14,9 +14,11 @@ export function teamMorale(state: BattleState, team: Team): MoraleTier {
 }
 
 /** Base stats plus active modifiers, passives and morale (§7). */
-export function effectiveStats(_state: BattleState, u: Unit): Stats & { allFront: boolean; freeClimb: boolean } {
-  const s = { ...u.base, allFront: false, freeClimb: false };
+export function effectiveStats(_state: BattleState, u: Unit): Stats & { allFront: boolean; freeClimb: boolean; hit: number } {
+  const s = { ...u.base, allFront: false, freeClimb: false, hit: 0 };
   for (const m of u.modifiers) {
+    s.atk += m.atk ?? 0;
+    s.hit += m.hit ?? 0;
     s.def += m.def ?? 0;
     s.res += m.res ?? 0;
     s.move += m.move ?? 0;
