@@ -1,0 +1,27 @@
+{
+  "_note": "Oathbound prototype audio. Load .ogg first, fall back to .mp3 (Phaser: this.load.audio(key, [ogg, mp3])). All files are original, synthesized by tools/audio/generate_audio.py.",
+  "buses": { "music": 0.7, "sfx": 0.9 },
+  "music": {
+    "mus_battle_loop":   { "loop": true,  "volume": 0.8, "use": "Battle map, from first turn until victory or defeat" },
+    "mus_camp_loop":     { "loop": true,  "volume": 0.8, "use": "Camp, war table and menus" },
+    "mus_victory_sting": { "loop": false, "volume": 1.0, "use": "Battle won; fade battle loop out over 0.3 s first" },
+    "mus_defeat_sting":  { "loop": false, "volume": 1.0, "use": "Battle lost; fade battle loop out over 0.3 s first" }
+  },
+  "sfx": {
+    "ui_click":     { "volume": 0.8, "use": "Any button press" },
+    "ui_hover":     { "volume": 0.5, "use": "Pointer enters a button" },
+    "ui_back":      { "volume": 0.8, "use": "Cancel, back, close" },
+    "unit_select":  { "volume": 0.8, "use": "Player selects a unit" },
+    "unit_move":    { "volume": 0.7, "use": "Unit starts a move (one per move order)" },
+    "atk_hit":      { "volume": 0.9, "variants": ["atk_hit_01", "atk_hit_02", "atk_hit_03"], "random_pitch": 0.05, "use": "Melee or ranged attack lands" },
+    "atk_miss":     { "volume": 0.8, "random_pitch": 0.05, "use": "Attack misses or is dodged" },
+    "atk_bow":      { "volume": 0.8, "use": "Bowhand fires (play before the hit or miss)" },
+    "ability_cast": { "volume": 0.8, "use": "Hedge Mage casts an offensive ability" },
+    "ability_heal": { "volume": 0.8, "use": "Healing or buff ability" },
+    "vow_sworn":    { "volume": 0.9, "use": "Vow confirmed on the deployment screen" },
+    "vow_kept":     { "volume": 1.0, "duck_music": true, "use": "SIGNATURE: vow kept (Reckoning screen or battle end)" },
+    "vow_broken":   { "volume": 1.0, "duck_music": true, "use": "SIGNATURE: vow cracks mid-battle" },
+    "vow_lapsed":   { "volume": 0.8, "use": "Battle ended before the vow resolved (no gain, no penalty)" },
+    "unit_down":    { "volume": 0.9, "use": "A unit is downed" }
+  }
+}
