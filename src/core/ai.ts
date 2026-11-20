@@ -39,14 +39,15 @@ export function planTurn(state: BattleState, unit: Unit): AiPlan {
   const tiles = reachableTiles(state, unit).sort((a, b) => a.cost - b.cost || a.pos.y - b.pos.y || a.pos.x - b.pos.x);
 
   // Rule 1: healer mends the most hurt ally below the threshold.
-  if (unit.ai?.healBelow !== undefined && unit.abilities.includes('mend') && abilityReady(unit, 'mend')) {
+  const healId = unit.abilities.find((id) => ABILITIES[id]?.type === 'heal');
+  if (unit.ai?.healBelow !== undefined && healId && abilityReady(unit, healId)) {
     const hurt = state.units
       .filter((u) => u.team === unit.team && u.status !== 'lost' && u.hp < u.base.hp * unit.ai!.healBelow!)
       .sort((a, b) => a.hp / a.base.hp - b.hp / b.base.hp || a.order - b.order);
     for (const h of hurt) {
       for (const t of tiles) {
-        if (previewAction(state, unit, 'mend', h.pos, t.pos).victims.length && targetTiles(state, unit, 'mend', t.pos).some((p) => p.x === h.pos.x && p.y === h.pos.y)) {
-          return { unitId: unit.id, moveTo: t.pos, action: { abilityId: 'mend', target: h.pos }, facing: facingToward(t.pos, h.pos, unit.facing), score: 1, reason: `mend ${h.id}` };
+        if (previewAction(state, unit, healId, h.pos, t.pos).victims.length && targetTiles(state, unit, healId, t.pos).some((p) => p.x === h.pos.x && p.y === h.pos.y)) {
+          return { unitId: unit.id, moveTo: t.pos, action: { abilityId: healId, target: h.pos }, facing: facingToward(t.pos, h.pos, unit.facing), score: 1, reason: `mend ${h.id}` };
         }
       }
     }

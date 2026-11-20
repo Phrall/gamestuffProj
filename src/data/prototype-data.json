@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -384,6 +384,24 @@
       "cd": 0,
       "melee": true,
       "straightLine": true
+    },
+    "binderSpark": {
+      "type": "magic",
+      "power": 3,
+      "range": [
+        1,
+        4
+      ],
+      "cd": 0
+    },
+    "binderMend": {
+      "type": "heal",
+      "range": [
+        0,
+        3
+      ],
+      "cd": 3,
+      "revives": true
     }
   },
   "map": {
@@ -552,7 +570,7 @@
       "prefersHeight": 2,
       "stats": {
         "hp": 20,
-        "atk": 6,
+        "atk": 5,
         "mag": 1,
         "def": 2,
         "res": 3,
@@ -586,8 +604,8 @@
         "eva": 5
       },
       "abilities": [
-        "spark",
-        "mend"
+        "binderSpark",
+        "binderMend"
       ]
     }
   ]

@@ -12,6 +12,8 @@ export interface SimSummary {
   squadWins: number;
   avgTurns: number;
   vows: Record<string, Record<string, number>>;
+  /** Vow outcomes split by battle result. */
+  vowsByResult: Record<'won' | 'lost', Record<string, Record<string, number>>>;
   abilities: Record<string, number>;
 }
 
@@ -34,7 +36,7 @@ export function runOne(seed: number, squad: 'scripted' | 'enemy'): BattleState {
 }
 
 export function simulate(runs: number, squad: 'scripted' | 'enemy'): SimSummary {
-  const out: SimSummary = { runs, squadWins: 0, avgTurns: 0, vows: {}, abilities: {} };
+  const out: SimSummary = { runs, squadWins: 0, avgTurns: 0, vows: {}, vowsByResult: { won: {}, lost: {} }, abilities: {} };
   for (let seed = 1; seed <= runs; seed++) {
     const s = runOne(seed, squad);
     if (s.winner === 'player') out.squadWins++;
@@ -43,6 +45,9 @@ export function simulate(runs: number, squad: 'scripted' | 'enemy'): SimSummary 
       const k = `${id}:${v.vowId}`;
       out.vows[k] ??= {};
       out.vows[k]![v.status] = (out.vows[k]![v.status] ?? 0) + 1;
+      const r = out.vowsByResult[s.winner === 'player' ? 'won' : 'lost'];
+      r[k] ??= {};
+      r[k]![v.status] = (r[k]![v.status] ?? 0) + 1;
     }
     for (const e of s.events) {
       if (e.type === 'ability' && s.units.find((u) => u.id === e.unitId)?.team === 'player') out.abilities[e.abilityId] = (out.abilities[e.abilityId] ?? 0) + 1;

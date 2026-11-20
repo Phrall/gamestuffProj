@@ -116,7 +116,7 @@ describe('enemy AI (§11)', () => {
     const s = createBattle(millFordSetup());
     getUnit(s, 'spearA').hp = 5;
     const plan = planTurn(s, getUnit(s, 'binder'));
-    expect(plan.action?.abilityId).toBe('mend');
+    expect(plan.action?.abilityId).toBe('binderMend');
   });
 
   it('advances toward the squad when nothing is in reach', () => {
