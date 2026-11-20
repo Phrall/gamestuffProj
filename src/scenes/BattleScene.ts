@@ -29,7 +29,15 @@ interface UnitView {
   sigilText: Phaser.GameObjects.Text;
 }
 
-const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P', spearB: 'P', archerA: 'A', archerB: 'A', binder: 'O' };
+const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P1', spearB: 'P2', archerA: 'A1', archerB: 'A2', binder: 'O' };
+/** Board token: player units by name initial (QA #15), enemies by role and number. */
+const glyphFor = (u: Unit): string => (u.team === 'player' ? u.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!);
+/** Short name for timeline chips; numbered when two units share a name. */
+const shortName = (u: Unit): string => {
+  const n = u.name.replace('Court ', '');
+  const tag = ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0];
+  return tag ? `${n} ${tag}` : n;
+};
 const ISO_DIR: Record<Facing, Vec> = { E: { x: 1, y: 0.5 }, S: { x: -1, y: 0.5 }, N: { x: 1, y: -0.5 }, W: { x: -1, y: -0.5 } };
 
 export const abilityLabel = (id: string): string => id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
@@ -157,10 +165,10 @@ export default class BattleScene extends Phaser.Scene {
     const root = this.add.container(0, 0);
     const body = this.add.graphics();
     const nub = this.add.graphics();
-    const glyph = text(this, 0, -22, u.classId ? CLASSES[u.classId]!.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!, 16, '#111318').setOrigin(0.5);
+    const glyph = text(this, 0, -22, glyphFor(u), 14, '#111318').setOrigin(0.5);
     const hp = this.add.graphics();
     const sigil = this.add.graphics();
-    const sigilText = text(this, 0, -64, '', 11, '#111318').setOrigin(0.5);
+    const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
     root.add([nub, body, glyph, hp, sigil, sigilText]);
     const view = { root, body, glyph, hp, nub, sigil, sigilText };
     this.placeUnit(u, u.pos, view);
@@ -187,7 +195,7 @@ export default class BattleScene extends Phaser.Scene {
     } else {
       v.body.fillStyle(color).fillRoundedRect(-13, -38, 26, 36, 5);
       v.body.lineStyle(active || lit ? 3 : 1, active ? COLORS.gold : lit ? COLORS.hover : 0x000000, 1).strokeRoundedRect(-13, -38, 26, 36, 5);
-      v.glyph.setY(-20).setText(u.classId ? CLASSES[u.classId]!.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!);
+      v.glyph.setY(-20).setText(glyphFor(u));
     }
     v.nub.clear();
     if (u.status === 'ok') {
@@ -207,21 +215,25 @@ export default class BattleScene extends Phaser.Scene {
     v.sigil.clear();
     const vow = this.state.vows[u.id];
     if (!vow || u.status === 'lost') { v.sigilText.setText(''); return; }
-    const y = u.status === 'downed' ? -24 : -64;
+    // Sits up and to the left of the token: an iso neighbour is 32px right and 16px down,
+    // so adjacent sigils no longer overlap (QA #16).
+    const y = u.status === 'downed' ? -26 : -68;
+    const x = -14;
     const dim = vow.frozen || vow.status === 'lapsed';
     const color = vow.status === 'broken' ? COLORS.violet : dim ? COLORS.downed : COLORS.gold;
-    v.sigil.fillStyle(color, 1).fillPoints([{ x: 0, y: y - 11 }, { x: 11, y }, { x: 0, y: y + 11 }, { x: -11, y }], true);
-    v.sigil.lineStyle(1, 0x000000, 0.8).strokePoints([{ x: 0, y: y - 11 }, { x: 11, y }, { x: 0, y: y + 11 }, { x: -11, y }], true);
+    const d = [{ x, y: y - 14 }, { x: x + 14, y }, { x, y: y + 14 }, { x: x - 14, y }];
+    v.sigil.fillStyle(color, 1).fillPoints(d, true);
+    v.sigil.lineStyle(2, 0x000000, 0.85).strokePoints(d, true);
     if (vow.status === 'broken') {
-      v.sigil.lineStyle(2, 0x1e1b4b, 1).lineBetween(-4, y - 8, 2, y - 1).lineBetween(2, y - 1, -2, y + 3).lineBetween(-2, y + 3, 4, y + 8);
+      v.sigil.lineStyle(2, 0x1e1b4b, 1).lineBetween(x - 5, y - 10, x + 2, y - 1).lineBetween(x + 2, y - 1, x - 2, y + 4).lineBetween(x - 2, y + 4, x + 5, y + 10);
       v.sigilText.setText('');
     } else {
-      v.sigilText.setY(y).setText(vow.status === 'fulfilled' ? '✓' : `${vow.progress}/${vow.goal}`);
+      v.sigilText.setPosition(x, y).setText(vow.status === 'fulfilled' ? '✓' : `${vow.progress}/${vow.goal}`);
     }
     // Pips (UX): one per goal step, filled as progress grows.
     for (let i = 0; i < vow.goal && vow.status !== 'broken'; i++) {
-      const px = (i - (vow.goal - 1) / 2) * 7;
-      v.sigil.fillStyle(i < vow.progress ? color : 0x000000, i < vow.progress ? 1 : 0.6).fillCircle(px, y + 16, 2.5);
+      const px = x + (i - (vow.goal - 1) / 2) * 8;
+      v.sigil.fillStyle(i < vow.progress ? color : 0x000000, i < vow.progress ? 1 : 0.7).fillCircle(px, y + 19, 3);
     }
   }
 
@@ -231,7 +243,8 @@ export default class BattleScene extends Phaser.Scene {
     this.timeline = this.add.container(0, 0).setDepth(1000);
     this.moraleText = text(this, 1270, 12, '', 14).setOrigin(1, 0).setDepth(1000);
     this.logText = text(this, 12, 96, '', 12, COLORS.textDim).setDepth(1000).setWordWrapWidth(280);
-    this.debugText = text(this, 1268, 96, '', 11, '#a7f3d0').setOrigin(1, 0).setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
+    // Left column, in place of the log, so it never covers the map (QA #14).
+    this.debugText = text(this, 8, 96, '', 10, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
 
     const panel = (x: number, w: number) => this.add.rectangle(x, 548, w, 162, COLORS.panel).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
     panel(10, 380);
@@ -297,7 +310,7 @@ export default class BattleScene extends Phaser.Scene {
         .setInteractive();
       bg.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
       bg.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
-      const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${u.name.replace('Court ', '')}`, 12).setOrigin(0.5);
+      const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${shortName(u)}`, 12).setOrigin(0.5);
       this.timeline.add([bg, t]);
     });
     // Wait ghost (UX board): where the active unit would land if it waited (CT 40).
@@ -698,6 +711,7 @@ export default class BattleScene extends Phaser.Scene {
   private toggleDebug(): void {
     this.debug = !this.debug;
     this.debugText.setVisible(this.debug);
+    this.logText.setVisible(!this.debug);
     this.refresh();
   }
 
@@ -706,9 +720,10 @@ export default class BattleScene extends Phaser.Scene {
     const rows = s.units.map((u) => {
       const st = effectiveStats(s, u);
       const cds = Object.entries(u.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(' ');
-      return `${u.id.padEnd(8)} ${u.status.padEnd(6)} hp ${String(u.hp).padStart(2)}/${u.base.hp} ct ${String(u.ct).padStart(3)} (${u.pos.x},${u.pos.y},h${heightAt(s.map, u.pos)}) ${u.facing} a${st.atk} d${st.def} r${st.res} mv${st.move} ${cds}`;
+      return `${u.id.padEnd(8)} ${u.status.padEnd(6)} hp ${String(u.hp).padStart(2)}/${u.base.hp} ct ${String(u.ct).padStart(3)}\n` +
+        `   (${u.pos.x},${u.pos.y},h${heightAt(s.map, u.pos)}) ${u.facing} a${st.atk} d${st.def} r${st.res} mv${st.move} ${cds}`;
     });
-    const pv = preview ? `\npreview ${JSON.stringify(preview.victims.map((v) => ({ id: v.unitId, hit: v.hit, dmg: v.damage, side: v.side, dh: v.heightDiff })))}` : '';
+    const pv = preview ? `\npreview\n${preview.victims.map((v) => ` ${v.unitId} hit ${v.hit} dmg ${v.damage} ${v.side} dh ${v.heightDiff}`).join('\n')}` : '';
     return [`seed ${s.seed}  turn ${s.turnNumber}  morale P${s.morale.player} E${s.morale.enemy}`, ...rows].join('\n') + pv;
   }
 
