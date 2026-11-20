@@ -1,0 +1,594 @@
+{
+  "version": "1.2",
+  "rules": {
+    "ctThreshold": 100,
+    "ctAfterTurn": {
+      "movedAndActed": 0,
+      "oneOnly": 20,
+      "waited": 40
+    },
+    "timelinePreviewTurns": 8,
+    "hit": {
+      "baseMelee": 90,
+      "baseRanged": 85,
+      "evaFactor": {
+        "front": 1.0,
+        "side": 0.5,
+        "back": 0
+      },
+      "perHeightLevel": 5,
+      "heightCap": 15,
+      "min": 10,
+      "max": 95,
+      "round": "floor"
+    },
+    "damage": {
+      "perHeightLevel": 0.1,
+      "heightCap": 0.3,
+      "facing": {
+        "front": 0,
+        "side": 0.15,
+        "back": 0.3
+      },
+      "min": 1
+    },
+    "heal": {
+      "base": 4,
+      "magDivisor": 2
+    },
+    "rangedHeightBonus": {
+      "minMaxRange": 3,
+      "heightAdvantage": 2,
+      "bonus": 1
+    },
+    "movement": {
+      "fordCost": 2,
+      "dropAllowance": 1
+    },
+    "reviveCounter": 3,
+    "morale": {
+      "start": 50,
+      "min": 0,
+      "max": 100,
+      "events": {
+        "enemyDefeated": 5,
+        "allyDowned": -10,
+        "allyRevived": 5,
+        "vowFulfilled": 10,
+        "vowBroken": -15,
+        "rallyCry": 5,
+        "leaderDefeated": -30
+      },
+      "tiers": [
+        {
+          "name": "Shaken",
+          "max": 24,
+          "hit": -10,
+          "move": -1,
+          "dmg": 0
+        },
+        {
+          "name": "Steady",
+          "max": 74,
+          "hit": 0,
+          "move": 0,
+          "dmg": 0
+        },
+        {
+          "name": "Inspired",
+          "max": 100,
+          "hit": 5,
+          "move": 0,
+          "dmg": 0.1
+        }
+      ],
+      "shakenMoveAppliesFrom": "nextTurn"
+    },
+    "tieBreak": "dataFileOrder",
+    "vowOnDowned": "freeze"
+  },
+  "vows": {
+    "bulwark": {
+      "name": "Bulwark",
+      "oathLine": "No blade passes me to them.",
+      "oathClass": "Warden",
+      "shadowClass": "Forsworn",
+      "goal": 3,
+      "progress": "interceptedAttack",
+      "breakOn": "allyDownedWithin",
+      "breakRadius": 2,
+      "whileSworn": {
+        "guard": true
+      },
+      "kept": {
+        "resolve": 2,
+        "nextBattle": {
+          "def": 2
+        }
+      },
+      "broken": {
+        "shadow": 2,
+        "surge": {
+          "atk": 3,
+          "move": 1,
+          "guard": false
+        }
+      },
+      "guardIgnoresAttackerRange": true
+    },
+    "loneBlade": {
+      "name": "Lone Blade",
+      "oathLine": "I go in alone, and I come out.",
+      "oathClass": "Duelist",
+      "shadowClass": "Reaver",
+      "goal": 2,
+      "progress": "defeatWithNoAllyAdjacent",
+      "breakOn": "defeatWithAllyAdjacent",
+      "whileSworn": {
+        "atkWhenAlone": 1
+      },
+      "kept": {
+        "resolve": 2,
+        "nextBattle": {
+          "atk": 2
+        }
+      },
+      "broken": {
+        "shadow": 2,
+        "surge": {
+          "atk": 4,
+          "hit": 10
+        }
+      }
+    }
+  },
+  "classUnlock": {
+    "resolve": 6,
+    "shadow": 4
+  },
+  "classes": {
+    "sellsword": {
+      "name": "Sellsword",
+      "stats": {
+        "hp": 30,
+        "atk": 8,
+        "mag": 2,
+        "def": 4,
+        "res": 2,
+        "spd": 6,
+        "move": 4,
+        "jump": 2,
+        "eva": 10
+      },
+      "abilities": [
+        "strike",
+        "cleave",
+        "shove",
+        "brace",
+        "rallyCry"
+      ]
+    },
+    "bowhand": {
+      "name": "Bowhand",
+      "stats": {
+        "hp": 24,
+        "atk": 7,
+        "mag": 2,
+        "def": 2,
+        "res": 3,
+        "spd": 7,
+        "move": 4,
+        "jump": 2,
+        "eva": 15
+      },
+      "abilities": [
+        "shoot",
+        "aimedShot",
+        "pinningArrow",
+        "volley",
+        "sureFooting"
+      ]
+    },
+    "hedgeMage": {
+      "name": "Hedge Mage",
+      "stats": {
+        "hp": 20,
+        "atk": 3,
+        "mag": 8,
+        "def": 1,
+        "res": 5,
+        "spd": 5,
+        "move": 3,
+        "jump": 1,
+        "eva": 5
+      },
+      "abilities": [
+        "spark",
+        "mend",
+        "ward",
+        "thornsnare",
+        "kindle"
+      ]
+    }
+  },
+  "abilities": {
+    "strike": {
+      "type": "phys",
+      "power": 5,
+      "range": [
+        1,
+        1
+      ],
+      "cd": 0,
+      "melee": true
+    },
+    "cleave": {
+      "type": "phys",
+      "power": 3,
+      "range": [
+        1,
+        1
+      ],
+      "cd": 3,
+      "melee": true,
+      "area": "perpendicularLine3",
+      "hitsAllies": false
+    },
+    "shove": {
+      "type": "phys",
+      "power": 2,
+      "range": [
+        1,
+        1
+      ],
+      "cd": 2,
+      "melee": true,
+      "push": 1,
+      "blockedBonus": 3,
+      "fallBonus": 3,
+      "fallMinDrop": 2
+    },
+    "brace": {
+      "type": "self",
+      "range": [
+        0,
+        0
+      ],
+      "cd": 3,
+      "buff": {
+        "def": 3,
+        "allFront": true,
+        "until": "ownNextTurn"
+      }
+    },
+    "rallyCry": {
+      "type": "self",
+      "range": [
+        0,
+        0
+      ],
+      "cd": 0,
+      "oncePerBattle": true,
+      "morale": 5
+    },
+    "shoot": {
+      "type": "phys",
+      "power": 4,
+      "range": [
+        2,
+        5
+      ],
+      "cd": 0
+    },
+    "aimedShot": {
+      "type": "phys",
+      "power": 6,
+      "range": [
+        3,
+        6
+      ],
+      "cd": 3,
+      "hitBonus": 10
+    },
+    "pinningArrow": {
+      "type": "phys",
+      "power": 2,
+      "range": [
+        2,
+        5
+      ],
+      "cd": 3,
+      "debuff": {
+        "move": -2,
+        "until": "targetNextTurnEnd"
+      }
+    },
+    "volley": {
+      "type": "phys",
+      "power": 3,
+      "range": [
+        3,
+        5
+      ],
+      "cd": 4,
+      "area": "plus",
+      "hitsAllies": true
+    },
+    "sureFooting": {
+      "type": "passive",
+      "jump": 1,
+      "freeClimb": true
+    },
+    "spark": {
+      "type": "magic",
+      "power": 4,
+      "range": [
+        1,
+        4
+      ],
+      "cd": 0
+    },
+    "mend": {
+      "type": "heal",
+      "range": [
+        0,
+        3
+      ],
+      "cd": 2,
+      "revives": true
+    },
+    "ward": {
+      "type": "buff",
+      "range": [
+        0,
+        3
+      ],
+      "cd": 2,
+      "buff": {
+        "def": 3,
+        "res": 3,
+        "until": "casterNextTurnStart"
+      }
+    },
+    "thornsnare": {
+      "type": "magic",
+      "power": 2,
+      "range": [
+        2,
+        4
+      ],
+      "cd": 3,
+      "area": "plus",
+      "hitsAllies": false,
+      "debuff": {
+        "move": -1,
+        "until": "targetNextTurnEnd"
+      }
+    },
+    "kindle": {
+      "type": "magic",
+      "power": 7,
+      "range": [
+        1,
+        3
+      ],
+      "cd": 4
+    },
+    "thrust": {
+      "type": "phys",
+      "power": 4,
+      "range": [
+        1,
+        2
+      ],
+      "cd": 0,
+      "melee": true,
+      "straightLine": true
+    }
+  },
+  "map": {
+    "id": "millFord",
+    "name": "Mill Ford",
+    "width": 10,
+    "height": 10,
+    "legend": {
+      "W": "water (impassable)",
+      "F": "ford (height 0, cost 2)",
+      "X": "boulder (impassable)",
+      "0-3": "height"
+    },
+    "rows": [
+      "2 2 2 1 1 1 1 2 3 3",
+      "2 2 1 1 1 1 1 2 3 3",
+      "1 1 1 1 0 0 X 1 2 2",
+      "1 1 0 0 0 0 0 1 1 1",
+      "W W F W W W W F W W",
+      "0 0 0 0 0 0 0 0 0 0",
+      "0 1 1 0 0 0 0 1 2 2",
+      "1 2 3 1 X 0 1 1 2 1",
+      "1 2 2 1 0 0 0 1 1 1",
+      "1 1 1 1 0 0 0 0 1 1"
+    ],
+    "deployZone": {
+      "x": [
+        1,
+        6
+      ],
+      "y": [
+        8,
+        9
+      ]
+    },
+    "win": "defeatAllEnemies",
+    "lose": "allDeployedDowned"
+  },
+  "playerUnits": [
+    {
+      "id": "maren",
+      "name": "Maren",
+      "class": "sellsword",
+      "pos": [
+        4,
+        8
+      ],
+      "facing": "N",
+      "suggestedVow": "bulwark"
+    },
+    {
+      "id": "tobin",
+      "name": "Tobin",
+      "class": "sellsword",
+      "pos": [
+        6,
+        8
+      ],
+      "facing": "N",
+      "suggestedVow": "loneBlade"
+    },
+    {
+      "id": "wren",
+      "name": "Wren",
+      "class": "bowhand",
+      "pos": [
+        2,
+        8
+      ],
+      "facing": "N",
+      "suggestedVow": null
+    },
+    {
+      "id": "calla",
+      "name": "Calla",
+      "class": "hedgeMage",
+      "pos": [
+        5,
+        9
+      ],
+      "facing": "N",
+      "suggestedVow": null
+    }
+  ],
+  "enemyUnits": [
+    {
+      "id": "captain",
+      "name": "Court Captain",
+      "leader": true,
+      "pos": [
+        4,
+        1
+      ],
+      "facing": "S",
+      "holdUntilWithin": 6,
+      "stats": {
+        "hp": 30,
+        "atk": 9,
+        "mag": 2,
+        "def": 5,
+        "res": 3,
+        "spd": 6,
+        "move": 4,
+        "jump": 2,
+        "eva": 10
+      },
+      "abilities": [
+        "strike",
+        "cleave"
+      ]
+    },
+    {
+      "id": "spearA",
+      "name": "Court Spearman",
+      "pos": [
+        2,
+        3
+      ],
+      "facing": "S",
+      "stats": {
+        "hp": 24,
+        "atk": 7,
+        "mag": 1,
+        "def": 4,
+        "res": 2,
+        "spd": 5,
+        "move": 4,
+        "jump": 2,
+        "eva": 5
+      },
+      "abilities": [
+        "thrust"
+      ]
+    },
+    {
+      "id": "spearB",
+      "name": "Court Spearman",
+      "pos": [
+        7,
+        3
+      ],
+      "facing": "S",
+      "stats": {
+        "hp": 24,
+        "atk": 7,
+        "mag": 1,
+        "def": 4,
+        "res": 2,
+        "spd": 5,
+        "move": 4,
+        "jump": 2,
+        "eva": 5
+      },
+      "abilities": [
+        "thrust"
+      ]
+    },
+    {
+      "id": "archerA",
+      "name": "Court Archer",
+      "pos": [
+        8,
+        0
+      ],
+      "facing": "S",
+      "prefersHeight": 2,
+      "stats": {
+        "hp": 20,
+        "atk": 6,
+        "mag": 1,
+        "def": 2,
+        "res": 3,
+        "spd": 7,
+        "move": 4,
+        "jump": 2,
+        "eva": 10
+      },
+      "abilities": [
+        "shoot"
+      ]
+    },
+    {
+      "id": "binder",
+      "name": "Oath-Binder",
+      "pos": [
+        5,
+        1
+      ],
+      "facing": "S",
+      "healBelow": 0.5,
+      "stats": {
+        "hp": 18,
+        "atk": 2,
+        "mag": 7,
+        "def": 1,
+        "res": 5,
+        "spd": 5,
+        "move": 3,
+        "jump": 1,
+        "eva": 5
+      },
+      "abilities": [
+        "spark",
+        "mend"
+      ]
+    }
+  ]
+}
