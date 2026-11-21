@@ -63,6 +63,24 @@ describe('Bulwark (§9)', () => {
     expect(s.morale.player).toBe(60);
   });
 
+  it('a frozen Held vow cannot break and is Kept at battle end; a frozen 0/1 lapses (UX ruling 3)', () => {
+    const s = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('calla', 'player', 'hedgeMage', 1, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
+    swearVow(s, 'maren', 'bulwark');
+    s.vows.maren!.progress = 1;
+    s.vows.maren!.frozen = true;
+    getUnit(s, 'maren').status = 'downed';
+    getUnit(s, 'calla').status = 'downed';
+    getUnit(s, 'e').status = 'lost';
+    startNextTurn(s);
+    expect(s.vows.maren!.status).toBe('fulfilled');
+    const s2 = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
+    swearVow(s2, 'maren', 'bulwark');
+    s2.vows.maren!.frozen = true;
+    getUnit(s2, 'e').status = 'lost';
+    startNextTurn(s2);
+    expect(s2.vows.maren!.status).toBe('lapsed');
+  });
+
   it('a break after the goal is met still breaks it (v1.7)', () => {
     const s = battle(flatRows(7, 3), [
       unit('maren', 'player', 'sellsword', 1, 1, 'E', { stats: { ...DUMMY, hp: 200, spd: 1 } }),
