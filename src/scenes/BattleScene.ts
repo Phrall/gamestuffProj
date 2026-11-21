@@ -670,7 +670,7 @@ export default class BattleScene extends Phaser.Scene {
   private refreshHint(): void {
     const u = activeUnit(this.state);
     let h = '';
-    if (this.mode.kind === 'deploy') h = 'Swear vows, then Begin battle (Enter)';
+    if (this.mode.kind === 'deploy') h = ''; // the swear panel carries its own Begin button
     else if (!u) h = '';
     else if (u.team === 'enemy') h = `${u.name} is acting…`;
     else if (this.mode.kind === 'move') h = this.state.moved ? 'Choose an action, or End turn' : 'Click a blue tile to move, or choose an action';
@@ -878,6 +878,13 @@ export default class BattleScene extends Phaser.Scene {
     this.cameras.main.scrollY += after.y - before.y;
     this.drawMap();
     for (const u of this.state.units) this.placeUnit(u, u.pos);
+    // Speech bubbles follow their speaker to the new view position.
+    for (const [id, b] of this.bubbles) {
+      const u = this.state.units.find((x) => x.id === id);
+      if (!u) continue;
+      const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
+      b.setPosition(c.x + 14, c.y - 52);
+    }
     this.drawCompass();
     // Re-run hover hit-testing: a different tile is under the cursor now.
     const p = this.input.activePointer;
