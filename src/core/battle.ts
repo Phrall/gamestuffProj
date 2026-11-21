@@ -5,18 +5,8 @@ import { occupant, pathTo, pathTree } from './pathfinding';
 import { nextRandom } from './rng';
 import { teamMorale } from './stats';
 import { advance } from './timeline';
-import type { BattleEvent, Facing, GridMap, Point, Team, Unit, VictimResult } from './types';
-
-/**
- * Extension points for systems layered on top of combat (vows, issue #9).
- * Defaults do nothing.
- */
-export interface BattleHooks {
-  hitBonus(state: BattleState, actor: Unit): number;
-  atkBonus(state: BattleState, actor: Unit, from: Point): number;
-}
-
-export const NO_HOOKS: BattleHooks = { hitBonus: () => 0, atkBonus: () => 0 };
+import type { BattleEvent, Facing, GridMap, Point, Team, Unit, VictimResult, VowState } from './types';
+import { onDowned, onIntercept, resolveVowsAtEnd } from './vows';
 
 export interface BattleState {
   map: GridMap;
@@ -31,7 +21,8 @@ export interface BattleState {
   rngState: number;
   seed: number;
   events: BattleEvent[];
-  hooks: BattleHooks;
+  /** Sworn vows by unit id (§9). */
+  vows: Record<string, VowState>;
 }
 
 export function createBattle(setup: BattleSetup, seed = 1): BattleState {
@@ -70,7 +61,7 @@ export function createBattle(setup: BattleSetup, seed = 1): BattleState {
     rngState: seed,
     seed,
     events: [],
-    hooks: NO_HOOKS,
+    vows: {},
   };
 }
 
@@ -86,7 +77,7 @@ export function activeUnit(state: BattleState): Unit | null {
 
 const enemyOf = (t: Team): Team => (t === 'player' ? 'enemy' : 'player');
 
-function emit(state: BattleState, e: BattleEvent): void {
+export function emit(state: BattleState, e: BattleEvent): void {
   state.events.push(e);
 }
 
@@ -108,6 +99,7 @@ function checkWinner(state: BattleState): void {
     if (state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok')) {
       state.winner = enemyOf(team);
       state.activeId = null;
+      resolveVowsAtEnd(state);
       emit(state, { type: 'battleEnd', winner: state.winner });
       return;
     }
@@ -227,6 +219,7 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
   u.xp += 10;
   state.acted = true;
   emit(state, { type: 'ability', unitId, abilityId, target, preview, results });
+  if (preview.interceptedBy) onIntercept(state, preview.interceptedBy, preview.victims[0]?.unitId ?? '', u.id, target);
 
   // Downs after the event so listeners see cause then effect.
   for (const r of results) {
@@ -240,7 +233,7 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
 function downUnit(state: BattleState, t: Unit, by: Unit | null): void {
   t.status = 'downed';
   t.reviveCounter = RULES.reviveCounter;
-  t.modifiers = [];
+  t.modifiers = t.modifiers.filter((m) => m.endsOn === 'battleEnd');
   emit(state, { type: 'downed', unitId: t.id, by: by?.id ?? null });
   const ev = RULES.morale.events;
   changeMorale(state, t.team, ev.allyDowned, 'ally downed');
@@ -250,6 +243,7 @@ function downUnit(state: BattleState, t: Unit, by: Unit | null): void {
     by.xp += 10;
     changeMorale(state, by.team, ev.enemyDefeated, 'enemy defeated');
   }
+  onDowned(state, t, by);
 }
 
 /** End the active unit's turn, optionally choosing a facing (§2, §4). */

@@ -69,11 +69,25 @@ export interface Modifier {
   def?: number;
   res?: number;
   move?: number;
+  atk?: number;
+  hit?: number;
   allFront?: boolean;
-  /** When it ends: at the start or end of a given unit's turn. */
-  endsOn: 'turnStart' | 'turnEnd';
+  /** When it ends: at the start or end of a given unit's turn, or at battle end (vow surges). */
+  endsOn: 'turnStart' | 'turnEnd' | 'battleEnd';
   endsWithUnit: string;
   source: string;
+}
+
+export type VowId = 'bulwark' | 'loneBlade';
+export type VowStatus = 'intact' | 'fulfilled' | 'broken' | 'lapsed';
+
+export interface VowState {
+  vowId: VowId;
+  status: VowStatus;
+  progress: number;
+  goal: number;
+  /** Downed while intact: no more progress or breaks; resolves at battle end (§13.3). */
+  frozen: boolean;
 }
 
 export type UnitStatus = 'ok' | 'downed' | 'lost';
@@ -128,6 +142,10 @@ export interface ActionPreview {
   from: Point;
   target: Point;
   victims: VictimPreview[];
+  /** Bulwark Guard: the unit that takes the attack instead of the one targeted. */
+  interceptedBy?: string;
+  /** The actor's own vow would break if this action downs someone (Lone Blade). */
+  breaksVow: boolean;
 }
 
 export type BattleEvent =
@@ -140,6 +158,12 @@ export type BattleEvent =
   | { type: 'reviveTick'; unitId: string; counter: number }
   | { type: 'morale'; team: Team; delta: number; value: number; reason: string }
   | { type: 'turnEnd'; unitId: string; facing: Facing; ct: number }
+  | { type: 'vowSworn'; unitId: string; vowId: VowId }
+  | { type: 'vowProgress'; unitId: string; vowId: VowId; progress: number; goal: number }
+  | { type: 'vowFulfilled'; unitId: string; vowId: VowId }
+  | { type: 'vowBroken'; unitId: string; vowId: VowId; cause: string }
+  | { type: 'vowFrozen'; unitId: string; vowId: VowId }
+  | { type: 'intercept'; unitId: string; protectedId: string; attackerId: string }
   | { type: 'battleEnd'; winner: Team };
 
 export interface VictimResult {

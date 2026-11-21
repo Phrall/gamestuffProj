@@ -50,6 +50,7 @@ export interface UnitSetup {
   pos: { x: number; y: number };
   facing: Facing;
   ai?: { holdUntilWithin?: number; prefersHeight?: number; healBelow?: number };
+  suggestedVow?: 'bulwark' | 'loneBlade' | null;
 }
 
 export interface BattleSetup { map: GridMap; units: UnitSetup[] }
@@ -63,6 +64,7 @@ export function millFordSetup(): BattleSetup {
       id: p.id, name: p.name, team: 'player', classId: p.class, leader: false,
       stats: { ...cls.stats }, abilities: [...cls.abilities],
       pos: { x: p.pos[0]!, y: p.pos[1]! }, facing: p.facing as Facing,
+      suggestedVow: (p.suggestedVow ?? null) as UnitSetup['suggestedVow'],
     });
   }
   for (const e of raw.enemyUnits) {

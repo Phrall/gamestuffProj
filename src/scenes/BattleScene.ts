@@ -7,12 +7,14 @@ import { DIRS, FACINGS, facingToward, heightAt, key, samePoint, tileAt } from '.
 import { occupant, pathTo, pathTree, reachableTiles } from '../core/pathfinding';
 import { effectiveStats, teamMorale } from '../core/stats';
 import { forecast } from '../core/timeline';
-import type { ActionPreview, BattleEvent, Facing, Point, Unit } from '../core/types';
+import { swearVow, vowDef } from '../core/vows';
+import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { pickTile, tileCenter, topDiamond, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FONT } from './theme';
 
 type Mode =
   | { kind: 'busy' }
+  | { kind: 'deploy' }
   | { kind: 'move' }
   | { kind: 'target'; abilityId: string }
   | { kind: 'facing'; facing: Facing };
@@ -23,9 +25,19 @@ interface UnitView {
   glyph: Phaser.GameObjects.Text;
   hp: Phaser.GameObjects.Graphics;
   nub: Phaser.GameObjects.Graphics;
+  sigil: Phaser.GameObjects.Graphics;
+  sigilText: Phaser.GameObjects.Text;
 }
 
-const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P', spearB: 'P', archerA: 'A', archerB: 'A', binder: 'O' };
+const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P1', spearB: 'P2', archerA: 'A1', archerB: 'A2', binder: 'O' };
+/** Board token: player units by name initial (QA #15), enemies by role and number. */
+const glyphFor = (u: Unit): string => (u.team === 'player' ? u.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!);
+/** Short name for timeline chips; numbered when two units share a name. */
+const shortName = (u: Unit): string => {
+  const n = u.name.replace('Court ', '');
+  const tag = ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0];
+  return tag ? `${n} ${tag}` : n;
+};
 const ISO_DIR: Record<Facing, Vec> = { E: { x: 1, y: 0.5 }, S: { x: -1, y: 0.5 }, N: { x: 1, y: -0.5 }, W: { x: -1, y: -0.5 } };
 
 export const abilityLabel = (id: string): string => id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
@@ -59,7 +71,9 @@ export default class BattleScene extends Phaser.Scene {
   create(): void {
     const seedParam = Number(new URLSearchParams(window.location.search).get('seed'));
     const seed = Number.isInteger(seedParam) && seedParam > 0 ? seedParam : (Date.now() % 1_000_000) + 1;
-    this.state = createBattle(millFordSetup(), seed);
+    const setup = millFordSetup();
+    this.state = createBattle(setup, seed);
+    this.vowChoice = Object.fromEntries(setup.units.filter((u) => u.team === 'player').map((u) => [u.id, u.suggestedVow ?? null]));
     this.views.clear();
     this.overlays = [];
     this.buttons = [];
@@ -72,8 +86,54 @@ export default class BattleScene extends Phaser.Scene {
     this.drawUi();
     this.bindInput();
     this.exposeForQa();
-    console.info('[oathbound] battle start', JSON.stringify({ seed, map: this.state.map.id }));
-    this.nextTurn();
+    this.showDeploy(seed);
+  }
+
+  // ---------- deploy and swear (§9) ----------
+
+  private vowChoice: Record<string, VowId | null> = {};
+  private deployUi: Phaser.GameObjects.GameObject[] = [];
+
+  private showDeploy(seed: number): void {
+    this.mode = { kind: 'deploy' };
+    this.refresh();
+    const order: (VowId | null)[] = [null, 'bulwark', 'loneBlade'];
+    const draw = () => {
+      for (const o of this.deployUi) o.destroy();
+      this.deployUi = [];
+      const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
+      add(this.add.rectangle(330, 150, 620, 330, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      add(text(this, 640, 172, 'Swear your vows', 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
+      add(text(this, 640, 206, 'Click a vow to change it. Each unit may swear one, or none.', 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
+        const y = 240 + i * 44;
+        const choice = this.vowChoice[u.id] ?? null;
+        add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
+        const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
+        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? 'guard 3 attacks' : '2 solo defeats'}` : 'No vow';
+        add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
+        btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+          ev.stopPropagation();
+          this.vowChoice[u.id] = order[(order.indexOf(choice) + 1) % order.length]!;
+          draw();
+        });
+      });
+      const go = add(this.add.rectangle(540, 424, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      add(text(this, 640, 444, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
+      go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
+    };
+    const begin = () => {
+      if (this.mode.kind !== 'deploy') return;
+      for (const o of this.deployUi) o.destroy();
+      this.deployUi = [];
+      for (const [id, vow] of Object.entries(this.vowChoice)) if (vow) swearVow(this.state, id, vow);
+      this.input.keyboard?.off('keydown-ENTER', begin);
+      console.info('[oathbound] battle start', JSON.stringify({ seed, map: this.state.map.id, vows: this.vowChoice }));
+      this.mode = { kind: 'busy' };
+      this.nextTurn();
+    };
+    this.input.keyboard?.on('keydown-ENTER', begin);
+    draw();
   }
 
   // ---------- map and units ----------
@@ -105,10 +165,12 @@ export default class BattleScene extends Phaser.Scene {
     const root = this.add.container(0, 0);
     const body = this.add.graphics();
     const nub = this.add.graphics();
-    const glyph = text(this, 0, -22, u.classId ? CLASSES[u.classId]!.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!, 16, '#111318').setOrigin(0.5);
+    const glyph = text(this, 0, -22, glyphFor(u), 14, '#111318').setOrigin(0.5);
     const hp = this.add.graphics();
-    root.add([nub, body, glyph, hp]);
-    const view = { root, body, glyph, hp, nub };
+    const sigil = this.add.graphics();
+    const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
+    root.add([nub, body, glyph, hp, sigil, sigilText]);
+    const view = { root, body, glyph, hp, nub, sigil, sigilText };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -133,18 +195,46 @@ export default class BattleScene extends Phaser.Scene {
     } else {
       v.body.fillStyle(color).fillRoundedRect(-13, -38, 26, 36, 5);
       v.body.lineStyle(active || lit ? 3 : 1, active ? COLORS.gold : lit ? COLORS.hover : 0x000000, 1).strokeRoundedRect(-13, -38, 26, 36, 5);
-      v.glyph.setY(-20).setText(u.classId ? CLASSES[u.classId]!.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!);
+      v.glyph.setY(-20).setText(glyphFor(u));
     }
     v.nub.clear();
     if (u.status === 'ok') {
       const d = ISO_DIR[u.facing];
       v.nub.fillStyle(0xffffff, 0.9).fillTriangle(d.x * 22, d.y * 22, d.x * 10 - d.y * 8, d.y * 10 + d.x * 4, d.x * 10 + d.y * 8, d.y * 10 - d.x * 4);
     }
+    this.drawSigil(u, v);
     v.hp.clear();
     if (u.status !== 'ok') return;
     const frac = Math.max(0, u.hp / u.base.hp);
     v.hp.fillStyle(0x000000, 0.7).fillRect(-15, -46, 30, 5);
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, -46, 30 * frac, 5);
+  }
+
+  /** Vow sigil (UX board 4): gold while intact or kept, cracked violet when broken, dim when frozen or lapsed. */
+  private drawSigil(u: Unit, v: UnitView): void {
+    v.sigil.clear();
+    const vow = this.state.vows[u.id];
+    if (!vow || u.status === 'lost') { v.sigilText.setText(''); return; }
+    // Sits up and to the left of the token: an iso neighbour is 32px right and 16px down,
+    // so adjacent sigils no longer overlap (QA #16).
+    const y = u.status === 'downed' ? -26 : -68;
+    const x = -14;
+    const dim = vow.frozen || vow.status === 'lapsed';
+    const color = vow.status === 'broken' ? COLORS.violet : dim ? COLORS.downed : COLORS.gold;
+    const d = [{ x, y: y - 14 }, { x: x + 14, y }, { x, y: y + 14 }, { x: x - 14, y }];
+    v.sigil.fillStyle(color, 1).fillPoints(d, true);
+    v.sigil.lineStyle(2, 0x000000, 0.85).strokePoints(d, true);
+    if (vow.status === 'broken') {
+      v.sigil.lineStyle(2, 0x1e1b4b, 1).lineBetween(x - 5, y - 10, x + 2, y - 1).lineBetween(x + 2, y - 1, x - 2, y + 4).lineBetween(x - 2, y + 4, x + 5, y + 10);
+      v.sigilText.setText('');
+    } else {
+      v.sigilText.setPosition(x, y).setText(vow.status === 'fulfilled' ? '✓' : `${vow.progress}/${vow.goal}`);
+    }
+    // Pips (UX): one per goal step, filled as progress grows.
+    for (let i = 0; i < vow.goal && vow.status !== 'broken'; i++) {
+      const px = x + (i - (vow.goal - 1) / 2) * 8;
+      v.sigil.fillStyle(i < vow.progress ? color : 0x000000, i < vow.progress ? 1 : 0.7).fillCircle(px, y + 19, 3);
+    }
   }
 
   // ---------- UI ----------
@@ -153,7 +243,8 @@ export default class BattleScene extends Phaser.Scene {
     this.timeline = this.add.container(0, 0).setDepth(1000);
     this.moraleText = text(this, 1270, 12, '', 14).setOrigin(1, 0).setDepth(1000);
     this.logText = text(this, 12, 96, '', 12, COLORS.textDim).setDepth(1000).setWordWrapWidth(280);
-    this.debugText = text(this, 1268, 96, '', 11, '#a7f3d0').setOrigin(1, 0).setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
+    // Left column, in place of the log, so it never covers the map (QA #14).
+    this.debugText = text(this, 8, 96, '', 10, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
 
     const panel = (x: number, w: number) => this.add.rectangle(x, 548, w, 162, COLORS.panel).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
     panel(10, 380);
@@ -219,7 +310,7 @@ export default class BattleScene extends Phaser.Scene {
         .setInteractive();
       bg.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
       bg.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
-      const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${u.name.replace('Court ', '')}`, 12).setOrigin(0.5);
+      const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${shortName(u)}`, 12).setOrigin(0.5);
       this.timeline.add([bg, t]);
     });
     // Wait ghost (UX board): where the active unit would land if it waited (CT 40).
@@ -250,7 +341,15 @@ export default class BattleScene extends Phaser.Scene {
       `Atk ${s.atk}  Mag ${s.mag}  Def ${s.def}  Res ${s.res}`,
       `Spd ${s.spd}  Move ${s.move}${moraleMove}  Jump ${s.jump}  Eva ${s.eva}`,
       mods ? `Effects: ${mods}` : '',
+      this.vowLine(u),
     ].filter(Boolean).join('\n');
+  }
+
+  private vowLine(u: Unit): string {
+    const v = this.state.vows[u.id];
+    if (!v) return '';
+    const state = v.frozen ? 'frozen' : v.status === 'fulfilled' ? 'KEPT' : v.status === 'broken' ? 'BROKEN (surge)' : v.status;
+    return `Vow: ${vowDef(v.vowId).name} ${v.progress}/${v.goal} · ${state}`;
   }
 
   private refreshPanels(preview: ActionPreview | null): void {
@@ -274,6 +373,8 @@ export default class BattleScene extends Phaser.Scene {
 
   private previewText(p: ActionPreview): string {
     const lines = [abilityLabel(p.abilityId)];
+    if (p.breaksVow) lines.push('⚠ Breaks vow');
+    if (p.interceptedBy) lines.push(`Guarded: ${getUnit(this.state, p.interceptedBy).name} takes the hit`);
     for (const v of p.victims) {
       const u = getUnit(this.state, v.unitId);
       const tags = [v.side !== 'front' ? v.side.toUpperCase() : 'front', v.heightDiff ? `height ${v.heightDiff > 0 ? '+' : ''}${v.heightDiff}` : ''].filter(Boolean).join(' · ');
@@ -353,7 +454,8 @@ export default class BattleScene extends Phaser.Scene {
   private refreshHint(): void {
     const u = activeUnit(this.state);
     let h = '';
-    if (!u) h = '';
+    if (this.mode.kind === 'deploy') h = 'Swear vows, then Begin battle (Enter)';
+    else if (!u) h = '';
     else if (u.team === 'enemy') h = `${u.name} is acting…`;
     else if (this.mode.kind === 'move') h = this.state.moved ? 'Choose an action, or End turn' : 'Click a blue tile to move, or choose an action';
     else if (this.mode.kind === 'target') h = 'Hover a target to preview, click to confirm. Right-click to cancel';
@@ -595,6 +697,12 @@ export default class BattleScene extends Phaser.Scene {
       case 'revived': return `${n(e.unitId)} is back up`;
       case 'lost': return `${n(e.unitId)} is lost`;
       case 'morale': return `${e.team === 'player' ? 'Squad' : 'Foe'} morale ${e.delta > 0 ? '+' : ''}${e.delta} (${e.reason})`;
+      case 'vowSworn': return `${n(e.unitId)} swears ${vowDef(e.vowId).name}`;
+      case 'vowProgress': return `${n(e.unitId)}'s vow: ${e.progress}/${e.goal}`;
+      case 'vowFulfilled': return `${n(e.unitId)} keeps ${vowDef(e.vowId).name}!`;
+      case 'vowBroken': return `${n(e.unitId)} breaks ${vowDef(e.vowId).name} (${e.cause})`;
+      case 'vowFrozen': return `${n(e.unitId)}'s vow is frozen`;
+      case 'intercept': return `${n(e.unitId)} guards ${n(e.protectedId)}`;
       case 'battleEnd': return e.winner === 'player' ? 'Victory!' : 'Defeat…';
       default: return '';
     }
@@ -603,6 +711,7 @@ export default class BattleScene extends Phaser.Scene {
   private toggleDebug(): void {
     this.debug = !this.debug;
     this.debugText.setVisible(this.debug);
+    this.logText.setVisible(!this.debug);
     this.refresh();
   }
 
@@ -611,9 +720,10 @@ export default class BattleScene extends Phaser.Scene {
     const rows = s.units.map((u) => {
       const st = effectiveStats(s, u);
       const cds = Object.entries(u.cooldowns).filter(([, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(' ');
-      return `${u.id.padEnd(8)} ${u.status.padEnd(6)} hp ${String(u.hp).padStart(2)}/${u.base.hp} ct ${String(u.ct).padStart(3)} (${u.pos.x},${u.pos.y},h${heightAt(s.map, u.pos)}) ${u.facing} a${st.atk} d${st.def} r${st.res} mv${st.move} ${cds}`;
+      return `${u.id.padEnd(8)} ${u.status.padEnd(6)} hp ${String(u.hp).padStart(2)}/${u.base.hp} ct ${String(u.ct).padStart(3)}\n` +
+        `   (${u.pos.x},${u.pos.y},h${heightAt(s.map, u.pos)}) ${u.facing} a${st.atk} d${st.def} r${st.res} mv${st.move} ${cds}`;
     });
-    const pv = preview ? `\npreview ${JSON.stringify(preview.victims.map((v) => ({ id: v.unitId, hit: v.hit, dmg: v.damage, side: v.side, dh: v.heightDiff })))}` : '';
+    const pv = preview ? `\npreview\n${preview.victims.map((v) => ` ${v.unitId} hit ${v.hit} dmg ${v.damage} ${v.side} dh ${v.heightDiff}`).join('\n')}` : '';
     return [`seed ${s.seed}  turn ${s.turnNumber}  morale P${s.morale.player} E${s.morale.enemy}`, ...rows].join('\n') + pv;
   }
 

@@ -3,6 +3,7 @@ import type { BattleState } from './battle';
 import { DIRS, facingToward, heightAt, inBounds, isPassable, manhattan, tileAt } from './grid';
 import { occupant } from './pathfinding';
 import { effectiveStats, teamMorale } from './stats';
+import { guardianFor, loneBladeAtk, wouldBreakOwnVow } from './vows';
 import type { AbilityDef, ActionPreview, Point, Side, Unit, VictimPreview } from './types';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -114,7 +115,7 @@ export function hitChance(state: BattleState, actor: Unit, a: AbilityDef, from: 
     clamp(dh * h.perHeightLevel, -h.heightCap, h.heightCap) +
     teamMorale(state, actor.team).hit +
     (a.hitBonus ?? 0) +
-    state.hooks.hitBonus(state, actor);
+    effectiveStats(state, actor).hit;
   // §13.1: clamp, then floor; the roll uses the same integer.
   return Math.floor(clamp(hit, h.min, h.max));
 }
@@ -123,7 +124,7 @@ export function damageAmount(state: BattleState, actor: Unit, a: AbilityDef, fro
   const as = effectiveStats(state, actor);
   const ts = effectiveStats(state, target);
   const d = RULES.damage;
-  const atk = as.atk + state.hooks.atkBonus(state, actor, from);
+  const atk = as.atk + loneBladeAtk(state, actor, from);
   const raw = a.type === 'magic' ? (a.power ?? 0) + as.mag - ts.res : (a.power ?? 0) + atk - ts.def;
   const dh = heightAt(state.map, from) - heightAt(state.map, target.pos);
   let mult = 1 + clamp(dh * d.perHeightLevel, -d.heightCap, d.heightCap) + teamMorale(state, actor.team).dmg;
@@ -142,7 +143,7 @@ export function healAmount(state: BattleState, actor: Unit): number {
  */
 export function previewAction(state: BattleState, actor: Unit, abilityId: string, target: Point, from: Point = actor.pos): ActionPreview {
   const a = ABILITIES[abilityId];
-  const preview: ActionPreview = { actorId: actor.id, abilityId, from, target, victims: [] };
+  const preview: ActionPreview = { actorId: actor.id, abilityId, from, target, victims: [], breaksVow: false };
   if (!a) return preview;
   const tiles = a.type === 'self' ? [from] : areaTiles(state, a, from, target);
   for (const p of tiles) {
@@ -151,9 +152,16 @@ export function previewAction(state: BattleState, actor: Unit, abilityId: string
     const u = a.type === 'self' ? actor : occupantAt(state, actor, from, p);
     if (!u || !affects(a, actor, u)) continue;
     if (!a.area && !isCenter) continue;
-    const v = previewVictim(state, actor, a, from, u);
-    preview.victims.push(v);
+    // Bulwark Guard takes single-target attacks aimed at an adjacent ally (§9).
+    const guard = isOffensive(a) && !a.area ? guardianFor(state, actor, u) : undefined;
+    if (guard && guard.id !== actor.id) {
+      preview.interceptedBy = guard.id;
+      preview.victims.push(previewVictim(state, actor, a, from, guard, true));
+    } else {
+      preview.victims.push(previewVictim(state, actor, a, from, u));
+    }
   }
+  preview.breaksVow = wouldBreakOwnVow(state, actor, from, preview.victims.some((v) => v.downs && getTeam(state, v.unitId) !== actor.team));
   return preview;
 }
 
@@ -163,9 +171,13 @@ function occupantAt(state: BattleState, actor: Unit, from: Point, p: Point): Uni
   return o && o.id === actor.id ? undefined : o;
 }
 
-export function previewVictim(state: BattleState, actor: Unit, a: AbilityDef, from: Point, u: Unit): VictimPreview {
+function getTeam(state: BattleState, id: string) {
+  return state.units.find((u) => u.id === id)?.team;
+}
+
+export function previewVictim(state: BattleState, actor: Unit, a: AbilityDef, from: Point, u: Unit, forceFront = false): VictimPreview {
   const ts = effectiveStats(state, u);
-  const side = attackSide(from, u, ts.allFront);
+  const side = attackSide(from, u, ts.allFront || forceFront);
   const dh = heightAt(state.map, from) - heightAt(state.map, u.pos);
   const base: VictimPreview = { unitId: u.id, hit: 100, damage: 0, heal: 0, hpAfter: u.hp, side, heightDiff: dh, downs: false, revives: false };
   if (a.type === 'heal') {
