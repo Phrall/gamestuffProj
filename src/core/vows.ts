@@ -62,10 +62,14 @@ function fulfil(state: BattleState, u: Unit, v: VowState): void {
   changeMorale(state, u.team, RULES.morale.events.vowFulfilled, 'vow fulfilled');
 }
 
+/** v1.7 Bulwark Alt A: the vow is judged at battle end, so it stays breakable after the goal is met. */
+const resolvesAtEnd = (v: VowState): boolean => (vowDef(v.vowId) as { resolvesAt?: string }).resolvesAt === 'battleEnd';
+
 function progress(state: BattleState, u: Unit, v: VowState): void {
+  if (resolvesAtEnd(v) && v.progress >= v.goal) return; // goal met; nothing more to count
   v.progress += 1;
   emit(state, { type: 'vowProgress', unitId: u.id, vowId: v.vowId, progress: v.progress, goal: v.goal });
-  if (v.progress >= v.goal) fulfil(state, u, v);
+  if (v.progress >= v.goal && !resolvesAtEnd(v)) fulfil(state, u, v);
 }
 
 function breakVow(state: BattleState, u: Unit, v: VowState, cause: string): void {
@@ -111,7 +115,11 @@ export function onDowned(state: BattleState, t: Unit, by: Unit | null): void {
 /** Battle over: intact vows lapse, frozen ones resolve (§9, §13.3). */
 export function resolveVowsAtEnd(state: BattleState): void {
   for (const v of Object.values(state.vows)) {
-    if (v.status === 'intact') v.status = v.progress >= v.goal ? 'fulfilled' : 'lapsed';
+    if (v.status !== 'intact') continue;
+    // Kept at the end fires the same event and +10 morale as an early Kept, for the Reckoning.
+    const u = state.units.find((x) => state.vows[x.id] === v);
+    if (v.progress >= v.goal && u) fulfil(state, u, v);
+    else v.status = 'lapsed';
   }
 }
 

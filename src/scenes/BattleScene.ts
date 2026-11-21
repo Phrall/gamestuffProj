@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ABILITIES, CLASSES, millFordSetup } from '../data';
+import { ABILITIES, CLASSES, VOWS, millFordSetup } from '../data';
 import { planTurn } from '../core/ai';
 import { activeUnit, createBattle, endTurn, getUnit, moveUnit, startNextTurn, useAbility, type BattleState } from '../core/battle';
 import { abilityReady, areaTiles, inRange, previewAction, targetTiles } from '../core/combat';
@@ -122,15 +122,18 @@ export default class BattleScene extends Phaser.Scene {
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
-      add(this.add.rectangle(330, 150, 620, 330, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      add(this.add.rectangle(330, 150, 620, 370, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
       add(text(this, 640, 172, 'Swear your vows', 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
       add(text(this, 640, 206, 'Click a vow to change it. Each unit may swear one, or none.', 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      if (Object.values(this.vowChoice).includes('bulwark')) {
+        add(text(this, 640, 414, `Bulwark: guard an ally from ${vowDef('bulwark').goal} attack, and let no ally within ${VOWS.bulwark.breakRadius} tiles fall. Kept at battle end; breaks if an ally within ${VOWS.bulwark.breakRadius} falls, even after the guard.`, 11, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(580).setAlign('center'));
+      }
       this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
         const y = 240 + i * 44;
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
-        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal} attack${vowDef(choice).goal > 1 ? 's' : ''}` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
+        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal}, none within ${VOWS.bulwark.breakRadius} fall` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
         add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
@@ -138,8 +141,8 @@ export default class BattleScene extends Phaser.Scene {
           draw();
         });
       });
-      const go = add(this.add.rectangle(540, 424, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
-      add(text(this, 640, 444, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
+      const go = add(this.add.rectangle(540, 464, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      add(text(this, 640, 484, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
@@ -259,10 +262,25 @@ export default class BattleScene extends Phaser.Scene {
     // so adjacent sigils no longer overlap (QA #16).
     const y = u.status === 'downed' ? -26 : -68;
     const x = -14;
-    const dim = vow.frozen || vow.status === 'lapsed';
-    const color = vow.status === 'broken' ? COLORS.violet : dim ? COLORS.downed : COLORS.gold;
+    const dim = vow.status === 'lapsed';
+    // v1.7 "Held": goal met but still breakable until battle end (UX sigil board).
+    const held = vow.status === 'intact' && vow.progress >= vow.goal;
+    // Frozen (unit downed with the vow intact): last state at 40% with a pause bar; nothing can break it.
+    const frozen = vow.frozen && vow.status === 'intact';
+    const color = vow.status === 'broken' ? COLORS.violet : dim ? COLORS.downed : held ? 0xf3e3b5 : COLORS.gold;
     const d = [{ x, y: y - 14 }, { x: x + 14, y }, { x, y: y + 14 }, { x: x - 14, y }];
+    v.sigil.setAlpha(frozen ? 0.4 : 1);
+    v.sigilText.setAlpha(frozen ? 0.4 : 1);
     v.sigil.fillStyle(color, 1).fillPoints(d, true);
+    if (frozen) v.sigil.fillStyle(0xe5e7eb, 1).fillRect(x + 12, y - 12, 2, 7).fillRect(x + 16, y - 12, 2, 7);
+    if (held) {
+      // Dashed inner ring.
+      for (let i = 0; i < 12; i += 2) {
+        const a0 = (i / 12) * Math.PI * 2;
+        const a1 = ((i + 1) / 12) * Math.PI * 2;
+        v.sigil.lineStyle(1.5, 0x8a6d1f, 1).lineBetween(x + Math.cos(a0) * 8, y + Math.sin(a0) * 8, x + Math.cos(a1) * 8, y + Math.sin(a1) * 8);
+      }
+    }
     v.sigil.lineStyle(2, 0x000000, 0.85).strokePoints(d, true);
     if (vow.status === 'broken') {
       v.sigil.lineStyle(2, 0x1e1b4b, 1).lineBetween(x - 5, y - 10, x + 2, y - 1).lineBetween(x + 2, y - 1, x - 2, y + 4).lineBetween(x - 2, y + 4, x + 5, y + 10);
@@ -458,13 +476,24 @@ export default class BattleScene extends Phaser.Scene {
     this.movePv = null;
     const u = activeUnit(this.state);
     let preview: ActionPreview | null = null;
-    const paint = (p: Point, color: number, alpha: number, stroke = false) => {
+    const paint = (p: Point, color: number, alpha: number, stroke = false, width = 2) => {
       const g = this.overlays[p.y * this.state.map.width + p.x];
       if (!g) return;
       const d = topDiamond(this.iso, p.x, p.y, heightAt(this.state.map, p));
-      if (stroke) g.lineStyle(2, color, alpha).strokePoints(d, true);
+      if (stroke) g.lineStyle(width, color, alpha).strokePoints(d, true);
       else g.fillStyle(color, alpha).fillPoints(d, true);
     };
+    // Bulwark break radius (UX): faint gold outline on tiles within breakRadius while the vow is Intact or Held.
+    for (const b of this.state.units) {
+      const v = this.state.vows[b.id];
+      if (!v || v.vowId !== 'bulwark' || v.status !== 'intact' || v.frozen || b.status !== 'ok') continue; // hidden when Kept, Broken or frozen
+      const r = VOWS.bulwark.breakRadius;
+      for (let y = b.pos.y - r; y <= b.pos.y + r; y++) {
+        for (let x = b.pos.x - r; x <= b.pos.x + r; x++) {
+          if (Math.abs(x - b.pos.x) + Math.abs(y - b.pos.y) <= r && tileAt(this.state.map, { x, y })) paint({ x, y }, 0xc9a35a, 0.55, true, 1.5);
+        }
+      }
+    }
     if (u && u.team === 'player') {
       if (this.mode.kind === 'move' && !this.state.moved) {
         const tree = pathTree(this.state, u);

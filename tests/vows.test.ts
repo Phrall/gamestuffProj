@@ -36,7 +36,7 @@ describe('Bulwark (§9)', () => {
     expect(previewAction(s, bow, 'volley', { x: 2, y: 1 }).interceptedBy).toBeUndefined();
   });
 
-  it('the goal number of intercepts fulfils it (+10 morale); Guard keeps working after', () => {
+  it('meeting the goal does not keep it early: Kept (+10 morale) only at battle end; Guard keeps working (v1.7)', () => {
     const s = battle(flatRows(5, 3), [
       unit('maren', 'player', 'sellsword', 1, 1, 'E', { stats: { ...DUMMY, hp: 200, spd: 1 } }),
       unit('calla', 'player', 'hedgeMage', 2, 1, 'N', { stats: { ...DUMMY, spd: 1 } }),
@@ -49,10 +49,53 @@ describe('Bulwark (§9)', () => {
       useAbility(s, 'e', 'spark', { x: 2, y: 1 });
       endTurn(s);
     }
-    expect(s.vows.maren!.status).toBe('fulfilled');
+    expect(s.vows.maren!.status).toBe('intact');
     expect(s.vows.maren!.progress).toBe(goal);
     expect(getUnit(s, 'calla').hp).toBe(getUnit(s, 'calla').base.hp);
+    expect(s.morale.player).toBe(50);
+    expect(s.events.some((e) => e.type === 'vowFulfilled')).toBe(false);
+    // End the battle: the enemy falls.
+    getUnit(s, 'e').status = 'lost';
+    startNextTurn(s);
+    expect(s.winner).toBe('player');
+    expect(s.vows.maren!.status).toBe('fulfilled');
+    expect(s.events.some((e) => e.type === 'vowFulfilled' && e.unitId === 'maren')).toBe(true);
     expect(s.morale.player).toBe(60);
+  });
+
+  it('a frozen Held vow cannot break and is Kept at battle end; a frozen 0/1 lapses (UX ruling 3)', () => {
+    const s = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('calla', 'player', 'hedgeMage', 1, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
+    swearVow(s, 'maren', 'bulwark');
+    s.vows.maren!.progress = 1;
+    s.vows.maren!.frozen = true;
+    getUnit(s, 'maren').status = 'downed';
+    getUnit(s, 'calla').status = 'downed';
+    getUnit(s, 'e').status = 'lost';
+    startNextTurn(s);
+    expect(s.vows.maren!.status).toBe('fulfilled');
+    const s2 = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
+    swearVow(s2, 'maren', 'bulwark');
+    s2.vows.maren!.frozen = true;
+    getUnit(s2, 'e').status = 'lost';
+    startNextTurn(s2);
+    expect(s2.vows.maren!.status).toBe('lapsed');
+  });
+
+  it('a break after the goal is met still breaks it (v1.7)', () => {
+    const s = battle(flatRows(7, 3), [
+      unit('maren', 'player', 'sellsword', 1, 1, 'E', { stats: { ...DUMMY, hp: 200, spd: 1 } }),
+      unit('calla', 'player', 'hedgeMage', 2, 1, 'N', { stats: { ...DUMMY, spd: 1 } }),
+      unit('wren', 'player', 'bowhand', 4, 1, 'N', { stats: { ...DUMMY, hp: 1, spd: 1 } }),
+      unit('e', 'enemy', 'hedgeMage', 2, 2, 'N', { stats: { ...STRONG, mag: 1 } }),
+    ]);
+    swearVow(s, 'maren', 'bulwark');
+    startNextTurn(s);
+    useAbility(s, 'e', 'spark', { x: 2, y: 1 }); // Guard intercepts: goal met
+    expect(s.vows.maren!.progress).toBe(VOWS.bulwark.goal);
+    s.acted = false;
+    useAbility(s, 'e', 'spark', { x: 4, y: 1 }); // Wren, 3 tiles away (beyond Guard reach), falls
+    expect(getUnit(s, 'wren').status).toBe('downed');
+    expect(s.vows.maren!.status).toBe('broken');
   });
 
   it('breaks when an ally beyond Guard reach but within break radius is downed: surge +3 Atk +1 Move, Guard ends', () => {
