@@ -1,5 +1,5 @@
 {
-  "version": "1.6",
+  "version": "1.7",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -94,7 +94,7 @@
       "oathLine": "No blade passes me to them.",
       "oathClass": "Warden",
       "shadowClass": "Forsworn",
-      "goal": 2,
+      "goal": 1,
       "progress": "interceptedAttack",
       "breakOn": "allyDownedWithin",
       "breakRadius": 3,
@@ -116,7 +116,8 @@
         }
       },
       "guardIgnoresAttackerRange": true,
-      "guardRadius": 2
+      "guardRadius": 2,
+      "resolvesAt": "battleEnd"
     },
     "loneBlade": {
       "name": "Lone Blade",
