@@ -27,6 +27,8 @@ interface UnitView {
   nub: Phaser.GameObjects.Graphics;
   sigil: Phaser.GameObjects.Graphics;
   sigilText: Phaser.GameObjects.Text;
+  /** Faint outline drawn above all terrain, so a unit behind high ground stays visible (UX §2). */
+  outline: Phaser.GameObjects.Graphics;
 }
 
 const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P1', spearB: 'P2', archerA: 'A1', archerB: 'A2', binder: 'O' };
@@ -56,7 +58,8 @@ export default class BattleScene extends Phaser.Scene {
   private mapGfx: Phaser.GameObjects.Graphics[] = [];
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private sorted = new WeakSet<Phaser.GameObjects.GameObject>();
-  private drag: { x: number; y: number; moved: boolean } | null = null;
+  private drag: { x: number; y: number; moved: boolean; button: number } | null = null;
+  private compass!: Phaser.GameObjects.Graphics;
 
   private timeline!: Phaser.GameObjects.Container;
   private moraleText!: Phaser.GameObjects.Text;
@@ -185,7 +188,8 @@ export default class BattleScene extends Phaser.Scene {
     const sigil = this.add.graphics();
     const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
     root.add([nub, body, glyph, hp, sigil, sigilText]);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText };
+    const outline = this.add.graphics().setDepth(898);
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -194,12 +198,17 @@ export default class BattleScene extends Phaser.Scene {
     if (!view) return;
     const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
     view.root.setPosition(c.x, c.y).setDepth(depthOf(this.iso, p.x, p.y) * 10 + 5);
+    view.outline.setPosition(c.x, c.y);
   }
 
   private drawUnit(u: Unit): void {
     const v = this.views.get(u.id);
     if (!v) return;
     v.root.setVisible(u.status !== 'lost');
+    v.outline.clear();
+    const edge = u.team === 'player' ? COLORS.player : COLORS.enemy;
+    if (u.status === 'downed') v.outline.lineStyle(1, edge, 0.6).strokeEllipse(0, -4, 30, 12);
+    else if (u.status === 'ok') v.outline.lineStyle(1, edge, 0.6).strokeRoundedRect(-13, -38, 26, 36, 5);
     const color = u.status === 'downed' ? COLORS.downed : u.team === 'player' ? COLORS.player : COLORS.enemy;
     const active = this.state.activeId === u.id;
     const lit = this.hoverUnitId === u.id;
@@ -268,7 +277,7 @@ export default class BattleScene extends Phaser.Scene {
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 640, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000);
-    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   R: reset view   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
+    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   C: center   R: reset   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
   }
 
   private rebuildButtons(): void {
@@ -360,12 +369,18 @@ export default class BattleScene extends Phaser.Scene {
     const cls = u.classId ? CLASSES[u.classId]!.name : u.leader ? 'Leader' : 'Oathcourt';
     return [
       `${title}${u.name}  ·  ${cls}${u.status !== 'ok' ? `  ·  ${u.status.toUpperCase()} (${u.reviveCounter})` : ''}`,
-      `HP ${u.hp}/${u.base.hp}   CT ${u.ct}   Facing ${u.facing}`,
+      `HP ${u.hp}/${u.base.hp}   CT ${u.ct}   Facing ${u.facing} ${this.screenArrow(u.facing)}`,
       `Atk ${s.atk}  Mag ${s.mag}  Def ${s.def}  Res ${s.res}`,
       `Spd ${s.spd}  Move ${s.move}${moraleMove}  Jump ${s.jump}  Eva ${s.eva}`,
       mods ? `Effects: ${mods}` : '',
       this.vowLine(u),
     ].filter(Boolean).join('\n');
+  }
+
+  /** Screen-space arrow for a world facing at the current rotation. */
+  private screenArrow(f: Facing): string {
+    const d = screenDir(this.iso, DIRS[f]);
+    return d.x > 0 ? (d.y > 0 ? '↘' : '↗') : d.y > 0 ? '↙' : '↖';
   }
 
   private vowLine(u: Unit): string {
@@ -491,7 +506,7 @@ export default class BattleScene extends Phaser.Scene {
   private bindInput(): void {
     this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.drag && p.leftButtonDown()) {
+      if (this.drag && p.isDown) {
         const cam = this.cameras.main;
         const dx = p.x - this.drag.x;
         const dy = p.y - this.drag.y;
@@ -499,6 +514,7 @@ export default class BattleScene extends Phaser.Scene {
           this.drag.moved = true;
           cam.scrollX -= dx / cam.zoom;
           cam.scrollY -= dy / cam.zoom;
+          this.clampCamera();
           this.drag.x = p.x;
           this.drag.y = p.y;
           return;
@@ -509,19 +525,22 @@ export default class BattleScene extends Phaser.Scene {
       this.setHover(t);
     });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-      if (p.rightButtonDown()) { this.cancel(); return; }
-      if (over.length || !this.onBoard(p)) return;
-      this.drag = { x: p.x, y: p.y, moved: false };
+      if (over.length || !this.onBoard(p)) { if (p.rightButtonDown()) this.cancel(); return; }
+      this.drag = { x: p.x, y: p.y, moved: false, button: p.button };
     });
-    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+    this.input.on('pointerup', () => {
       const d = this.drag;
       this.drag = null;
-      if (!d || d.moved || p.rightButtonReleased()) return;
+      if (!d || d.moved) return;
+      // Right-click without dragging cancels; right/middle drag pans (UX §2).
+      if (d.button === 2) { this.cancel(); return; }
+      if (d.button !== 0) return;
+      const p = this.input.activePointer;
       const t = this.pick(this.cameras.main.getWorldPoint(p.x, p.y));
       if (t) { this.hover = t; void this.clickTile(t); }
     });
     this.input.on('wheel', (p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
-      if (this.onBoard(p)) this.zoomBy(dy > 0 ? 1 / 1.15 : 1.15, p);
+      if (this.onBoard(p)) this.zoomStep(dy > 0 ? -1 : 1, p);
     });
     const kb = this.input.keyboard!;
     kb.on('keydown', (e: KeyboardEvent) => {
@@ -532,8 +551,9 @@ export default class BattleScene extends Phaser.Scene {
       else if (e.key === 'q' || e.key === 'Q') this.rotateView(-1);
       else if (e.key === 'e' || e.key === 'E') this.rotateView(1);
       else if (e.key === 'r' || e.key === 'R' || e.key === 'Home') this.resetCamera();
-      else if (e.key === '+' || e.key === '=') this.zoomBy(1.15);
-      else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.15);
+      else if (e.key === '+' || e.key === '=') this.zoomStep(1);
+      else if (e.key === '-' || e.key === '_') this.zoomStep(-1);
+      else if (e.key === 'c' || e.key === 'C') this.centerOnActive();
       else if (this.mode.kind !== 'facing' && e.key.startsWith('Arrow')) {
         const cam = this.cameras.main;
         const step = 48 / cam.zoom;
@@ -541,6 +561,7 @@ export default class BattleScene extends Phaser.Scene {
         if (e.key === 'ArrowRight') cam.scrollX += step;
         if (e.key === 'ArrowUp') cam.scrollY -= step;
         if (e.key === 'ArrowDown') cam.scrollY += step;
+        this.clampCamera();
       }
       else if (e.key === 'Tab') { e.preventDefault(); this.cycleTarget(e.shiftKey ? -1 : 1); }
       else if (e.key === 'Enter' && (this.mode.kind === 'target' || this.mode.kind === 'move') && this.hover) void this.clickTile(this.hover);
@@ -582,7 +603,69 @@ export default class BattleScene extends Phaser.Scene {
 
   /** True when the pointer is over the board area, not the timeline strip or the bottom panels. */
   private onBoard(p: Phaser.Input.Pointer): boolean {
+    if (p.x >= 940 && p.y >= 492) return false; // camera control cluster
     return p.y > 66 && p.y < 540;
+  }
+
+  /** Zoom levels: 1 = the 2x pixel-art base, so these are 2x, 3x and 4x (UX §2). */
+  private static ZOOMS = [1, 1.5, 2];
+
+  private zoomStep(dir: number, at?: Phaser.Input.Pointer): void {
+    const zs = BattleScene.ZOOMS;
+    const cur = this.cameras.main.zoom;
+    let i = zs.findIndex((z) => Math.abs(z - cur) < 0.01);
+    if (i < 0) i = 0;
+    const next = zs[Math.max(0, Math.min(zs.length - 1, i + dir))]!;
+    if (next !== cur) this.zoomBy(next / cur, at);
+  }
+
+  /** Visible world rectangle of the main camera, worked out from scroll and zoom. */
+  private worldView(): { l: number; r: number; t: number; b: number } {
+    const c = this.cameras.main;
+    const hw = c.width / 2 / c.zoom;
+    const hh = c.height / 2 / c.zoom;
+    return { l: c.scrollX + c.width / 2 - hw, r: c.scrollX + c.width / 2 + hw, t: c.scrollY + c.height / 2 - hh, b: c.scrollY + c.height / 2 + hh };
+  }
+
+  /** Keep at least part of the map on screen. */
+  private clampCamera(): void {
+    const { width, height } = this.state.map;
+    const pts = [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]].map(([x, y]) => tileCenter(this.iso, x!, y!, 0));
+    const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+    const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+    const c = this.cameras.main;
+    const v = this.worldView();
+    const m = 64;
+    if (v.r < minX + m) c.scrollX += minX + m - v.r;
+    if (v.l > maxX - m) c.scrollX -= v.l - (maxX - m);
+    if (v.b < minY + m) c.scrollY += minY + m - v.b;
+    if (v.t > maxY - m) c.scrollY -= v.t - (maxY - m);
+  }
+
+  /** Screen point of a world point (camera matrix only updates at render, so by hand). */
+  private toScreen(w: Vec): Vec {
+    const c = this.cameras.main;
+    return { x: (w.x - c.scrollX - c.width / 2) * c.zoom + c.width / 2, y: (w.y - c.scrollY - c.height / 2) * c.zoom + c.height / 2 };
+  }
+
+  private centerOnActive(animate = false): void {
+    const u = activeUnit(this.state);
+    if (!u) return;
+    const w = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
+    const c = this.cameras.main;
+    // Centre on the board area (between the timeline and the panels), not the whole canvas.
+    const sx = w.x - c.width / 2;
+    const sy = w.y - 20 - c.height / 2 - (303 - c.height / 2) / c.zoom;
+    if (animate) this.tweens.add({ targets: c, scrollX: sx, scrollY: sy, duration: 300, ease: 'Sine.easeInOut' });
+    else c.setScroll(sx, sy);
+  }
+
+  /** Auto-follow (UX §2): pan to the acting unit if it is off-screen or near a HUD panel. */
+  private followActive(): void {
+    const u = activeUnit(this.state);
+    if (!u) return;
+    const s = this.toScreen(tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos)));
+    if (s.x < 120 || s.x > 1160 || s.y < 66 + 120 || s.y > 540 - 60) this.centerOnActive(true);
   }
 
   private zoomBy(f: number, at?: Phaser.Input.Pointer): void {
@@ -597,6 +680,7 @@ export default class BattleScene extends Phaser.Scene {
     cam.setZoom(z);
     cam.scrollX = wx - (sx - cam.width / 2) / z - cam.width / 2;
     cam.scrollY = wy - (sy - cam.height / 2) / z - cam.height / 2;
+    this.clampCamera();
   }
 
   private resetCamera(): void {
@@ -616,17 +700,50 @@ export default class BattleScene extends Phaser.Scene {
     this.cameras.main.scrollY += after.y - before.y;
     this.drawMap();
     for (const u of this.state.units) this.placeUnit(u, u.pos);
+    this.drawCompass();
+    // Re-run hover hit-testing: a different tile is under the cursor now.
+    const p = this.input.activePointer;
+    this.hover = this.onBoard(p) ? this.pick(this.cameras.main.getWorldPoint(p.x, p.y)) : this.hover;
     this.refresh();
   }
 
+  private drawCompass(): void {
+    const g = this.compass;
+    if (!g) return;
+    const cx = 1270 - 24 - 6 * 44 - 10 + 22 + 44; // second slot
+    const cy = 514;
+    const d = screenDir(this.iso, DIRS.N);
+    const len = Math.hypot(d.x, d.y);
+    const nx = d.x / len, ny = d.y / len;
+    g.clear();
+    g.fillStyle(0x1f2937).fillCircle(cx, cy, 14).lineStyle(1, COLORS.panelEdge).strokeCircle(cx, cy, 14);
+    g.fillStyle(0xef4444).fillTriangle(cx + nx * 11, cy + ny * 11, cx - ny * 4, cy + nx * 4, cx + ny * 4, cy - nx * 4);
+    g.fillStyle(0x9ca3af).fillTriangle(cx - nx * 9, cy - ny * 9, cx - ny * 4, cy + nx * 4, cx + ny * 4, cy - nx * 4);
+    this.compassLabel?.setPosition(cx + nx * 18, cy + ny * 18);
+  }
+  private compassLabel?: Phaser.GameObjects.Text;
+
+  /** Camera cluster, bottom right above the target panel (UX §2): Q, compass, E | −, +, C. */
   private drawCameraButtons(): void {
-    const items: [string, () => void][] = [['⟲ Q', () => this.rotateView(-1)], ['E ⟳', () => this.rotateView(1)], ['Reset', () => this.resetCamera()]];
-    items.forEach(([label, fn], i) => {
-      const x = 1270 - (items.length - i) * 66;
-      const bg = this.add.rectangle(x, 56, 60, 26, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-      text(this, x + 30, 69, label, 13).setOrigin(0.5).setDepth(1001);
+    const x0 = 1270 - 24 - 6 * 44 - 10;
+    this.add.rectangle(x0 - 6, 488, 6 * 44 + 10 + 12, 52, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
+    const items: ([string, string, () => void] | null)[] = [
+      ['⟲', 'Rotate left (Q)', () => this.rotateView(-1)], null, ['⟳', 'Rotate right (E)', () => this.rotateView(1)],
+      ['−', 'Zoom out (-)', () => this.zoomStep(-1)], ['+', 'Zoom in (+)', () => this.zoomStep(1)], ['◎', 'Center on active unit (C)', () => this.centerOnActive(true)],
+    ];
+    items.forEach((it, i) => {
+      if (!it) return;
+      const [label, tip, fn] = it;
+      const x = x0 + i * 44 + (i >= 3 ? 10 : 0);
+      const bg = this.add.rectangle(x, 494, 40, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
+      text(this, x + 20, 514, label, 20).setOrigin(0.5).setDepth(1001);
+      bg.on('pointerover', () => this.hint.setText(tip));
+      bg.on('pointerout', () => this.refreshHint());
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); fn(); });
     });
+    this.compass = this.add.graphics().setDepth(1000);
+    this.compassLabel = text(this, 0, 0, 'N', 10, '#ef4444').setOrigin(0.5).setDepth(1001);
+    this.drawCompass();
   }
 
   /** Units first (their bodies stand above the terrain), then tiles front to back. */
@@ -724,6 +841,7 @@ export default class BattleScene extends Phaser.Scene {
     const u = startNextTurn(this.state);
     if (!u) return this.finish();
     this.rebuildButtons();
+    this.followActive();
     if (u.team === 'enemy') {
       this.mode = { kind: 'busy' };
       this.refresh();
@@ -789,7 +907,7 @@ export default class BattleScene extends Phaser.Scene {
     for (const p of path) {
       const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
       v.root.setDepth(Math.max(depthOf(this.iso, p.x, p.y), depthOf(this.iso, prev.x, prev.y)) * 10 + 5);
-      await new Promise<void>((r) => this.tweens.add({ targets: v.root, x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
+      await new Promise<void>((r) => this.tweens.add({ targets: [v.root, v.outline], x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
       prev = p;
     }
     this.placeUnit(u, u.pos);
