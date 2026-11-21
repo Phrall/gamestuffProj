@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -9,8 +9,8 @@
     },
     "timelinePreviewTurns": 8,
     "hit": {
-      "baseMelee": 90,
-      "baseRanged": 85,
+      "baseMelee": 86,
+      "baseRanged": 80,
       "evaFactor": {
         "front": 1.0,
         "side": 0.5,
@@ -20,7 +20,8 @@
       "heightCap": 15,
       "min": 10,
       "max": 95,
-      "round": "floor"
+      "round": "floor",
+      "addHitBonus": true
     },
     "damage": {
       "perHeightLevel": 0.1,
@@ -167,7 +168,8 @@
         "shove",
         "brace",
         "rallyCry"
-      ]
+      ],
+      "statClass": "sellsword"
     },
     "bowhand": {
       "name": "Bowhand",
@@ -188,7 +190,8 @@
         "pinningArrow",
         "volley",
         "sureFooting"
-      ]
+      ],
+      "statClass": "bowhand"
     },
     "hedgeMage": {
       "name": "Hedge Mage",
@@ -201,7 +204,7 @@
         "spd": 5,
         "move": 3,
         "jump": 1,
-        "eva": 5
+        "eva": 6
       },
       "abilities": [
         "spark",
@@ -209,7 +212,8 @@
         "ward",
         "thornsnare",
         "kindle"
-      ]
+      ],
+      "statClass": "hedgeMage"
     }
   },
   "abilities": {
@@ -451,7 +455,21 @@
         8
       ],
       "facing": "N",
-      "suggestedVow": "bulwark"
+      "suggestedVow": "bulwark",
+      "level": 3,
+      "derivedPreview": {
+        "hp": 30,
+        "atk": 8,
+        "mag": 2,
+        "def": 4,
+        "res": 2,
+        "spd": 6,
+        "move": 4,
+        "jump": 2,
+        "eva": 10,
+        "hitBonus": 4
+      },
+      "hitBonus": 4
     },
     {
       "id": "tobin",
@@ -462,7 +480,21 @@
         8
       ],
       "facing": "N",
-      "suggestedVow": "loneBlade"
+      "suggestedVow": "loneBlade",
+      "level": 3,
+      "derivedPreview": {
+        "hp": 30,
+        "atk": 8,
+        "mag": 2,
+        "def": 4,
+        "res": 2,
+        "spd": 6,
+        "move": 4,
+        "jump": 2,
+        "eva": 10,
+        "hitBonus": 4
+      },
+      "hitBonus": 4
     },
     {
       "id": "wren",
@@ -473,7 +505,21 @@
         8
       ],
       "facing": "N",
-      "suggestedVow": null
+      "suggestedVow": null,
+      "level": 3,
+      "derivedPreview": {
+        "hp": 24,
+        "atk": 7,
+        "mag": 2,
+        "def": 2,
+        "res": 3,
+        "spd": 7,
+        "move": 4,
+        "jump": 2,
+        "eva": 15,
+        "hitBonus": 5
+      },
+      "hitBonus": 5
     },
     {
       "id": "calla",
@@ -484,7 +530,21 @@
         9
       ],
       "facing": "N",
-      "suggestedVow": null
+      "suggestedVow": null,
+      "level": 3,
+      "derivedPreview": {
+        "hp": 20,
+        "atk": 3,
+        "mag": 8,
+        "def": 1,
+        "res": 5,
+        "spd": 5,
+        "move": 3,
+        "jump": 1,
+        "eva": 6,
+        "hitBonus": 0
+      },
+      "hitBonus": 0
     }
   ],
   "enemyUnits": [
@@ -512,7 +572,10 @@
       "abilities": [
         "strike",
         "cleave"
-      ]
+      ],
+      "statClass": "courtCaptain",
+      "level": 4,
+      "hitBonus": 4
     },
     {
       "id": "spearA",
@@ -535,7 +598,10 @@
       },
       "abilities": [
         "thrust"
-      ]
+      ],
+      "statClass": "courtSpearman",
+      "level": 4,
+      "hitBonus": 2
     },
     {
       "id": "spearB",
@@ -546,7 +612,7 @@
       ],
       "facing": "S",
       "stats": {
-        "hp": 26,
+        "hp": 24,
         "atk": 7,
         "mag": 1,
         "def": 4,
@@ -558,7 +624,10 @@
       },
       "abilities": [
         "thrust"
-      ]
+      ],
+      "statClass": "courtSpearman",
+      "level": 3,
+      "hitBonus": 2
     },
     {
       "id": "archerA",
@@ -578,11 +647,14 @@
         "spd": 7,
         "move": 4,
         "jump": 2,
-        "eva": 10
+        "eva": 15
       },
       "abilities": [
         "shoot"
-      ]
+      ],
+      "statClass": "courtArcher",
+      "level": 3,
+      "hitBonus": 5
     },
     {
       "id": "binder",
@@ -602,12 +674,245 @@
         "spd": 5,
         "move": 3,
         "jump": 1,
-        "eva": 5
+        "eva": 6
       },
       "abilities": [
         "binderSpark",
         "binderMend"
-      ]
+      ],
+      "statClass": "oathBinder",
+      "level": 3,
+      "hitBonus": 0
     }
-  ]
+  ],
+  "statRules": {
+    "attributes": [
+      "str",
+      "vit",
+      "dex",
+      "agi",
+      "int",
+      "wil"
+    ],
+    "formulas": {
+      "hp": "10 + 2*vit",
+      "atk": "str + weapon.atk",
+      "mag": "int + weapon.mag",
+      "def": "armor.def + floor(vit/5)",
+      "res": "armor.res + floor(wil/2)",
+      "spd": "2 + floor(agi/2)",
+      "eva": "max(0, agi + floor(dex/2) - armor.weight)",
+      "hitBonus": "floor(dex/2)",
+      "attributeAtLevel": "base + floor(growth * (level - 1))"
+    },
+    "hitBase": {
+      "melee": 86,
+      "ranged": 80
+    },
+    "magicAlwaysHits": true
+  },
+  "weapons": {
+    "sword": {
+      "atk": 2
+    },
+    "bow": {
+      "atk": 2
+    },
+    "staff": {},
+    "spear": {
+      "atk": 2
+    },
+    "blade": {
+      "atk": 2
+    },
+    "sealRod": {}
+  },
+  "armor": {
+    "mail": {
+      "def": 2,
+      "res": 0,
+      "weight": 2
+    },
+    "leather": {
+      "def": 1,
+      "res": 2,
+      "weight": 0
+    },
+    "robe": {
+      "def": 0,
+      "res": 2,
+      "weight": 0
+    },
+    "scale": {
+      "def": 3,
+      "res": 0,
+      "weight": 3
+    },
+    "plate": {
+      "def": 3,
+      "res": 1,
+      "weight": 2
+    },
+    "vestments": {
+      "def": 1,
+      "res": 2,
+      "weight": 0
+    }
+  },
+  "statClasses": {
+    "sellsword": {
+      "base": {
+        "str": 5,
+        "vit": 8,
+        "dex": 7,
+        "agi": 7,
+        "int": 2,
+        "wil": 4
+      },
+      "growthPerLevel": {
+        "str": 0.5,
+        "vit": 1,
+        "dex": 0.5,
+        "agi": 0.5,
+        "int": 0,
+        "wil": 0.25
+      },
+      "move": 4,
+      "jump": 2,
+      "weapon": "sword",
+      "armor": "mail"
+    },
+    "bowhand": {
+      "base": {
+        "str": 4,
+        "vit": 6,
+        "dex": 8,
+        "agi": 9,
+        "int": 2,
+        "wil": 2
+      },
+      "growthPerLevel": {
+        "str": 0.5,
+        "vit": 0.75,
+        "dex": 1,
+        "agi": 0.5,
+        "int": 0,
+        "wil": 0.25
+      },
+      "move": 4,
+      "jump": 2,
+      "weapon": "bow",
+      "armor": "leather"
+    },
+    "hedgeMage": {
+      "base": {
+        "str": 3,
+        "vit": 4,
+        "dex": 1,
+        "agi": 5,
+        "int": 6,
+        "wil": 5
+      },
+      "growthPerLevel": {
+        "str": 0,
+        "vit": 0.5,
+        "dex": 0.25,
+        "agi": 0.5,
+        "int": 1,
+        "wil": 0.75
+      },
+      "move": 3,
+      "jump": 1,
+      "weapon": "staff",
+      "armor": "robe"
+    },
+    "courtCaptain": {
+      "base": {
+        "str": 6,
+        "vit": 7,
+        "dex": 7,
+        "agi": 7,
+        "int": 2,
+        "wil": 4
+      },
+      "growthPerLevel": {
+        "str": 0.5,
+        "vit": 1,
+        "dex": 0.5,
+        "agi": 0.5,
+        "int": 0,
+        "wil": 0.25
+      },
+      "move": 4,
+      "jump": 2,
+      "weapon": "blade",
+      "armor": "plate"
+    },
+    "courtSpearman": {
+      "base": {
+        "str": 4,
+        "vit": 5,
+        "dex": 4,
+        "agi": 6,
+        "int": 1,
+        "wil": 4
+      },
+      "growthPerLevel": {
+        "str": 0.5,
+        "vit": 1,
+        "dex": 0.5,
+        "agi": 0.25,
+        "int": 0,
+        "wil": 0.25
+      },
+      "move": 4,
+      "jump": 2,
+      "weapon": "spear",
+      "armor": "scale"
+    },
+    "courtArcher": {
+      "base": {
+        "str": 2,
+        "vit": 4,
+        "dex": 8,
+        "agi": 9,
+        "int": 1,
+        "wil": 2
+      },
+      "growthPerLevel": {
+        "str": 0.5,
+        "vit": 0.75,
+        "dex": 1,
+        "agi": 0.5,
+        "int": 0,
+        "wil": 0.25
+      },
+      "move": 4,
+      "jump": 2,
+      "weapon": "bow",
+      "armor": "leather"
+    },
+    "oathBinder": {
+      "base": {
+        "str": 2,
+        "vit": 3,
+        "dex": 1,
+        "agi": 5,
+        "int": 5,
+        "wil": 5
+      },
+      "growthPerLevel": {
+        "str": 0,
+        "vit": 0.5,
+        "dex": 0.25,
+        "agi": 0.5,
+        "int": 1,
+        "wil": 0.75
+      },
+      "move": 3,
+      "jump": 1,
+      "weapon": "sealRod",
+      "armor": "vestments"
+    }
+  }
 }

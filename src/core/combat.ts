@@ -115,6 +115,7 @@ export function hitChance(state: BattleState, actor: Unit, a: AbilityDef, from: 
     clamp(dh * h.perHeightLevel, -h.heightCap, h.heightCap) +
     teamMorale(state, actor.team).hit +
     (a.hitBonus ?? 0) +
+    (h.addHitBonus ? actor.base.hitBonus ?? 0 : 0) +
     effectiveStats(state, actor).hit;
   // §13.1: clamp, then floor; the roll uses the same integer.
   return Math.floor(clamp(hit, h.min, h.max));

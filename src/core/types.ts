@@ -34,6 +34,8 @@ export interface Stats {
   move: number;
   jump: number;
   eva: number;
+  /** floor(DEX / 2), added to the base hit chance (§19). Absent on hand-written test stats. */
+  hitBonus?: number;
 }
 
 export type AbilityType = 'phys' | 'magic' | 'heal' | 'buff' | 'self' | 'passive';
