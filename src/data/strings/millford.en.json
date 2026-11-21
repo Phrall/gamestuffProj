@@ -1,5 +1,5 @@
 {
-  "version": "0.3",
+  "version": "0.4",
   "locale": "en",
   "dataVersion": "1.7",
   "_notes": "Placeholders in {braces} are filled by code. Reaction 'held' is Bulwark only. Barks: pick one at random per event; 'shaken' plays once when squad morale enters Shaken.",
@@ -33,7 +33,14 @@
       "dmgPct": "rules.morale.tiers[].dmg x 100"
     },
     "reckoning": {
-      "value/max/className/tier/change": "filled by the Reckoning screen"
+      "value/max/className/tier/change": "filled by the Reckoning screen",
+      "n": "final vow progress"
+    },
+    "names": {
+      "ability": "display name of the ability (ui.abilities.<id>.name)",
+      "ally": "the ally's display name (ui.units.<id>.name)",
+      "vow": "vow display name (ui.vows.<vow>.name)",
+      "progress": "the already-formatted ui.vows.<vow>.progress string"
     }
   },
   "speakers": {
@@ -653,12 +660,12 @@
         "bulwark": {
           "kept": "Guarded {n} attack · no ally within {breakRadius} tiles fell",
           "broken": "An ally within {breakRadius} tiles fell",
-          "lapsed": "Battle ended at 0 / {goal} · no attack guarded"
+          "lapsed": "Battle ended at {n} / {goal} · no attack guarded"
         },
         "loneBlade": {
           "kept": "Defeated {n} foe alone",
           "broken": "Defeated a foe with an ally beside",
-          "lapsed": "Battle ended at 0 / {goal} · no solo defeat"
+          "lapsed": "Battle ended at {n} / {goal} · no solo defeat"
         }
       },
       "classProgress": {

@@ -38,3 +38,24 @@ describe('strings (Writing hand-off)', () => {
     expect((lookup('barks.maren.attack') as string[])).toContain(line);
   });
 });
+
+describe('strings: every ui placeholder fills from data (QA S2/S3)', () => {
+  it('vow, ability and morale texts have no raw {placeholders} left', async () => {
+    const { abilityParams, moraleParams, vowParams } = await import('../src/data/strings');
+    const leftovers: string[] = [];
+    const check = (path: string, params: Record<string, string | number>) => {
+      const s = t(path, params);
+      if (/\{\w+\}/.test(s) || s === path) leftovers.push(`${path}: ${s}`);
+    };
+    for (const v of ['bulwark', 'loneBlade']) {
+      for (const k of ['summary', 'whileSworn', 'kept', 'breaks', 'broken', 'progress']) check(`ui.vows.${v}.${k}`, vowParams(v, 1));
+      for (const r of ['kept', 'broken', 'lapsed']) check(`ui.reckoning.detail.${v}.${r}`, vowParams(v, 0));
+    }
+    for (const id of Object.keys(lookup('ui.abilities') as object)) check(`ui.abilities.${id}.tooltip`, abilityParams(id, 8));
+    for (const tier of ['shaken', 'steady', 'inspired']) check(`ui.morale.${tier}.tooltip`, moraleParams(tier));
+    expect(leftovers).toEqual([]);
+    expect(t('ui.vows.bulwark.summary', vowParams('bulwark'))).toBe('Guard an ally from 1 attack, and let no ally within 3 tiles fall.');
+    expect(t('ui.abilities.mend.tooltip', abilityParams('mend', 8))).toContain('for 8 HP');
+    expect(t('ui.abilities.pinningArrow.tooltip', abilityParams('pinningArrow'))).toContain('loses 2 Move');
+  });
+});

@@ -12,6 +12,9 @@ import { movePreview, type MovePreview, type Threat } from '../core/movePreview'
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FONT } from './theme';
+import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
+import { playDialogue } from './dialogue';
+import { mulberry32 } from '../core/rng';
 
 type Mode =
   | { kind: 'busy' }
@@ -39,10 +42,14 @@ const glyphFor = (u: Unit): string => (u.team === 'player' ? u.name[0]! : ENEMY_
 const shortName = (u: Unit): string => {
   const n = u.name.replace('Court ', '');
   const tag = ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0];
-  return tag ? `${n} ${tag}` : n;
+  return unitShort(u.id, tag ? `${n} ${tag}` : n);
 };
 
-export const abilityLabel = (id: string): string => id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+/** Ability display name from Writing's strings (falls back to the id, spaced out). */
+export const abilityLabel = (id: string): string => {
+  const n = abilityName(id);
+  return n !== id ? n : id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+};
 
 const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, color: string = COLORS.text) =>
   scene.add.text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color });
@@ -57,6 +64,9 @@ export default class BattleScene extends Phaser.Scene {
   private hoverUnitId: string | null = null;
   private debug = false;
   private mapGfx: Phaser.GameObjects.Graphics[] = [];
+  private barkRand: () => number = Math.random;
+  private lastBarkAt: Record<string, number> = {};
+  private wasShaken = false;
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private sorted = new WeakSet<Phaser.GameObjects.GameObject>();
   private drag: { x: number; y: number; moved: boolean; button: number } | null = null;
@@ -84,6 +94,10 @@ export default class BattleScene extends Phaser.Scene {
     const seed = Number.isInteger(seedParam) && seedParam > 0 ? seedParam : (Date.now() % 1_000_000) + 1;
     const setup = millFordSetup();
     this.state = createBattle(setup, seed);
+    for (const u of this.state.units) u.name = unitName(u.id, u.name);
+    // Barks use their own RNG so flavour never shifts combat rolls (replays stay identical).
+    this.barkRand = mulberry32(seed ^ 0x5eed);
+    this.lastBarkAt = {};
     this.iso = { ...this.iso, rot: 0, mapW: this.state.map.width, mapH: this.state.map.height };
     this.mapGfx = [];
     this.sorted = new WeakSet();
@@ -115,7 +129,7 @@ export default class BattleScene extends Phaser.Scene {
   private deployUi: Phaser.GameObjects.GameObject[] = [];
 
   private showDeploy(seed: number): void {
-    this.mode = { kind: 'deploy' };
+    this.mode = { kind: 'busy' };
     this.refresh();
     const order: (VowId | null)[] = [null, 'bulwark', 'loneBlade'];
     const draw = () => {
@@ -123,17 +137,17 @@ export default class BattleScene extends Phaser.Scene {
       this.deployUi = [];
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
       add(this.add.rectangle(330, 150, 620, 370, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
-      add(text(this, 640, 172, 'Swear your vows', 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
-      add(text(this, 640, 206, 'Click a vow to change it. Each unit may swear one, or none.', 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
-      if (Object.values(this.vowChoice).includes('bulwark')) {
-        add(text(this, 640, 414, `Bulwark: guard an ally from ${vowDef('bulwark').goal} attack, and let no ally within ${VOWS.bulwark.breakRadius} tiles fall. Kept at battle end; breaks if an ally within ${VOWS.bulwark.breakRadius} falls, even after the guard.`, 11, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(580).setAlign('center'));
-      }
+      add(text(this, 640, 172, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
+      add(text(this, 640, 206, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      const chosen = [...new Set(Object.values(this.vowChoice).filter((v): v is VowId => !!v))];
+      const notes = chosen.map((v) => `${vowName(v)}: ${t(`ui.vows.${v}.summary`, vowParams(v))} ${t(`ui.vows.${v}.breaks`, vowParams(v))}`);
+      if (notes.length) add(text(this, 640, 414, notes.join('\n'), 11, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(590).setAlign('center'));
       this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
         const y = 240 + i * 44;
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
-        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal}, none within ${VOWS.bulwark.breakRadius} fall` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
+        const label = choice ? `${vowName(choice)}: ${t(`ui.vows.${choice}.progress`, vowParams(choice, 0))}` : t('ui.deploy.noVow');
         add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
@@ -142,7 +156,7 @@ export default class BattleScene extends Phaser.Scene {
         });
       });
       const go = add(this.add.rectangle(540, 464, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
-      add(text(this, 640, 484, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
+      add(text(this, 640, 484, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
@@ -153,10 +167,23 @@ export default class BattleScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown-ENTER', begin);
       console.info('[oathbound] battle start', JSON.stringify({ seed, map: this.state.map.id, vows: this.vowChoice }));
       this.mode = { kind: 'busy' };
+      // Oath bubbles (Writing): each sworn unit speaks its oath, staggered.
+      let delay = 0;
+      for (const [id, vow] of Object.entries(this.vowChoice)) {
+        const line = vow ? lookup(`vows.${vow}.oath.${id}`) : undefined;
+        if (typeof line === 'string') { this.time.delayedCall(delay, () => this.say(id, line, 2200)); delay += 900; }
+      }
       this.nextTurn();
     };
     this.input.keyboard?.on('keydown-ENTER', begin);
-    draw();
+    playDialogue(this, scene('millFord.pre'), () => {
+      // Next tick, so the key that closed the dialogue doesn't also press Begin.
+      this.time.delayedCall(0, () => {
+        this.mode = { kind: 'deploy' };
+        this.refreshHint();
+        draw();
+      });
+    });
   }
 
   // ---------- map and units ----------
@@ -299,7 +326,12 @@ export default class BattleScene extends Phaser.Scene {
 
   private drawUi(): void {
     this.timeline = this.add.container(0, 0).setDepth(1000);
-    this.moraleText = text(this, 1270, 12, '', 14).setOrigin(1, 0).setDepth(1000);
+    this.moraleText = text(this, 1270, 12, '', 14).setOrigin(1, 0).setDepth(1000).setInteractive();
+    this.moraleText.on('pointerover', () => {
+      const tier = teamMorale(this.state, 'player').name.toLowerCase();
+      this.hint.setText(`${t(`ui.morale.${tier}.name`)}: ${t(`ui.morale.${tier}.tooltip`, moraleParams(tier))}`);
+    });
+    this.moraleText.on('pointerout', () => this.refreshHint());
     this.logText = text(this, 12, 96, '', 12, COLORS.textDim).setDepth(1000).setWordWrapWidth(280);
     // Left column, in place of the log, so it never covers the map (QA #14).
     this.debugText = text(this, 8, 96, '', 10, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
@@ -329,6 +361,10 @@ export default class BattleScene extends Phaser.Scene {
       const bg = this.add.rectangle(x, y, 148, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
       const label = text(this, x + 10, y + 11, '', 14).setDepth(1001);
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.pressAction(i); });
+      if (id !== 'wait') {
+        bg.on('pointerover', () => this.hint.setText(`${abilityLabel(id)}: ${t(`ui.abilities.${id}.tooltip`, abilityParams(id, effectiveStats(this.state, u).mag))}`));
+        bg.on('pointerout', () => this.refreshHint());
+      }
       this.buttons.push({ id, bg, label });
     });
     this.refreshButtons();
@@ -346,7 +382,7 @@ export default class BattleScene extends Phaser.Scene {
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
-      b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? 'End turn' : 'Wait') : abilityLabel(b.id)}${suffix}`);
+      b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? 'End turn' : 'Wait') : abilityShort(b.id)}${suffix}`);
       b.label.setColor(enabled ? COLORS.text : '#4b5563');
       b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
@@ -385,7 +421,7 @@ export default class BattleScene extends Phaser.Scene {
       const ghost = forecast(this.state.units, 8, a.id, 40).findIndex((e, i) => i > 0 && e.unitId === a.id);
       if (ghost > 0) {
         const gx = x0 + ghost * (w + 6) + w / 2;
-        this.timeline.add(text(this, gx, 54, '▲ if Wait', 11, '#f5c451').setOrigin(0.5, 0));
+        this.timeline.add(text(this, gx, 54, `▲ ${t('ui.timeline.waitGhost')}`, 11, '#f5c451').setOrigin(0.5, 0));
       }
     }
   }
@@ -393,7 +429,15 @@ export default class BattleScene extends Phaser.Scene {
   private refreshMorale(): void {
     const p = this.state.morale.player;
     const e = this.state.morale.enemy;
-    this.moraleText.setText(`Squad morale ${p} ${teamMorale(this.state, 'player').name}\nFoe morale   ${e} ${teamMorale(this.state, 'enemy').name}`);
+    const tier = (team: 'player' | 'enemy') => t(`ui.morale.${teamMorale(this.state, team).name.toLowerCase()}.name`);
+    this.moraleText.setText(`Squad ${t('ui.morale.label').toLowerCase()} ${p} ${tier('player')}\nFoe ${t('ui.morale.label').toLowerCase()}   ${e} ${tier('enemy')}`);
+    // Bark once when squad morale enters Shaken.
+    const shaken = teamMorale(this.state, 'player').name === 'Shaken';
+    if (shaken && !this.wasShaken) {
+      const speaker = this.state.units.find((u) => u.team === 'player' && u.status === 'ok');
+      if (speaker) this.barkFor(speaker.id, 'shaken', true);
+    }
+    this.wasShaken = shaken;
   }
 
   private unitSummary(u: Unit, title: string): string {
@@ -420,8 +464,10 @@ export default class BattleScene extends Phaser.Scene {
   private vowLine(u: Unit): string {
     const v = this.state.vows[u.id];
     if (!v) return '';
-    const state = v.frozen ? 'frozen' : v.status === 'fulfilled' ? 'KEPT' : v.status === 'broken' ? 'BROKEN (surge)' : v.status;
-    return `Vow: ${vowDef(v.vowId).name} ${v.progress}/${v.goal} · ${state}`;
+    const held = v.status === 'intact' && v.progress >= v.goal;
+    const key = v.frozen && v.status === 'intact' ? 'frozen' : v.status === 'fulfilled' ? 'kept' : v.status === 'broken' ? 'broken' : v.status === 'lapsed' ? 'lapsed' : held ? 'held' : 'intact';
+    const progress = t(`ui.vows.${v.vowId}.progress`, vowParams(v.vowId, v.progress));
+    return `${vowName(v.vowId)} · ${t(`ui.sigil.${key}.label`)} · ${t(`ui.sigil.${key}.tooltip`, { progress, goal: v.goal })}`;
   }
 
   private refreshPanels(preview: ActionPreview | null): void {
@@ -447,16 +493,22 @@ export default class BattleScene extends Phaser.Scene {
 
   private previewText(p: ActionPreview): string {
     const lines = [abilityLabel(p.abilityId)];
-    if (p.breaksVow) lines.push('⚠ Breaks vow');
+    if (p.breaksVow) {
+      const actor = getUnit(this.state, p.actorId);
+      const vow = this.state.vows[actor.id];
+      const ally = this.state.units.find((o) => o.id !== actor.id && o.team === actor.team && o.status === 'ok' && Math.abs(o.pos.x - p.from.x) + Math.abs(o.pos.y - p.from.y) === 1);
+      lines.push(`⚠ ${t('ui.preview.breaksVow')}`);
+      if (vow && ally) lines.push(`  ${t('ui.preview.breaksVowDetail', { vow: vowName(vow.vowId), ally: ally.name })}`);
+    }
     if (p.interceptedBy) lines.push(`Guarded: ${getUnit(this.state, p.interceptedBy).name} takes the hit`);
     for (const v of p.victims) {
       const u = getUnit(this.state, v.unitId);
-      const tags = [v.side !== 'front' ? v.side.toUpperCase() : 'front', v.heightDiff ? `height ${v.heightDiff > 0 ? '+' : ''}${v.heightDiff}` : ''].filter(Boolean).join(' · ');
+      const tags = [t(`ui.preview.${v.side}`), v.heightDiff > 0 ? `${t('ui.preview.highGround')} +${v.heightDiff}` : v.heightDiff < 0 ? `${t('ui.preview.lowGround')} ${v.heightDiff}` : ''].filter(Boolean).join(' · ');
       if (v.heal || v.revives) {
         lines.push(`${u.name}: ${v.revives ? 'REVIVE, ' : ''}heal ${v.heal}  HP ${u.hp} → ${v.hpAfter}`);
       } else if (v.damage) {
         lines.push(`${u.name}${u.team === getUnit(this.state, p.actorId).team ? ' (ally!)' : ''}`);
-        lines.push(`  Hit ${v.hit}%   Dmg ${v.damage}   HP ${u.hp} → ${v.hpAfter}${v.downs ? '  DOWNS' : ''}`);
+        lines.push(`  ${t('ui.preview.hit')} ${v.hit}%   ${t('ui.preview.damage')} ${v.damage}   ${t('ui.preview.hpAfter')} ${u.hp} → ${v.hpAfter}${v.downs ? '  ☠' : ''}`);
         lines.push(`  ${tags}${v.pushedTo ? ' · pushed' : ''}`);
       } else {
         lines.push(`${u.name}: ${describeEffect(p.abilityId)}`);
@@ -598,7 +650,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private movePreviewText(mp: MovePreview): string {
     const n = mp.threats.length;
-    const lines = [n ? `From this tile · ${n} target${n > 1 ? 's' : ''}` : 'No targets from here'];
+    const lines = [n ? t('ui.fromTile.targets', { n }) : t('ui.fromTile.none')];
     for (const t of mp.threats.slice(0, 4)) {
       const codes = t.abilities.map((a) => `${a.area ? `[${abilityCode(a.abilityId)}]` : abilityCode(a.abilityId)}${a.hitsAlly ? '⚠' : ''}`).join(' ');
       lines.push(`${shortName(getUnit(this.state, t.unitId)).padEnd(12)} ${codes.padEnd(14)} ${sideTag(t)}${t.canDown ? ' ☠' : ''}`);
@@ -608,9 +660,9 @@ export default class BattleScene extends Phaser.Scene {
     if (used.length) lines.push('', used.map((id) => `${abilityCode(id)} ${abilityLabel(id)}`).join(' · '));
     if (mp.threats.some((t) => t.abilities.some((a) => a.hitsAlly))) lines.push('⚠ would also catch an ally');
     for (const x of mp.excluded) {
-      lines.push(x.reason === 'cooldown' ? `${abilityLabel(x.abilityId)} is cooling down (ready in ${x.readyIn}), so it is left out.` : `${abilityLabel(x.abilityId)} is used, so it is left out.`);
+      lines.push(x.reason === 'cooldown' ? t('ui.fromTile.cooling', { ability: abilityLabel(x.abilityId), n: x.readyIn ?? 0 }) : t('ui.fromTile.used', { ability: abilityLabel(x.abilityId) }));
     }
-    if (mp.breaksLoneBlade) lines.push('Downing a foe here breaks Lone Blade (ally adjacent)');
+    if (mp.breaksLoneBlade) lines.push(t('ui.fromTile.breaksLoneBlade'));
     return lines.join('\n');
   }
 
@@ -853,8 +905,8 @@ export default class BattleScene extends Phaser.Scene {
     const x0 = 1270 - 24 - 6 * 44 - 10;
     this.add.rectangle(x0 - 6, 488, 6 * 44 + 10 + 12, 52, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
     const items: ([string, string, () => void] | null)[] = [
-      ['⟲', 'Rotate left (Q)', () => this.rotateView(-1)], null, ['⟳', 'Rotate right (E)', () => this.rotateView(1)],
-      ['−', 'Zoom out (-)', () => this.zoomStep(-1)], ['+', 'Zoom in (+)', () => this.zoomStep(1)], ['◎', 'Center on active unit (C)', () => this.centerOnActive(true)],
+      ['⟲', t('ui.camera.rotateLeft'), () => this.rotateView(-1)], null, ['⟳', t('ui.camera.rotateRight'), () => this.rotateView(1)],
+      ['−', `${t('ui.camera.zoomOut')} (-)`, () => this.zoomStep(-1)], ['+', `${t('ui.camera.zoomIn')} (+)`, () => this.zoomStep(1)], ['◎', t('ui.camera.center'), () => this.centerOnActive(true)],
     ];
     items.forEach((it, i) => {
       if (!it) return;
@@ -1053,6 +1105,7 @@ export default class BattleScene extends Phaser.Scene {
       const e = events[this.eventCursor]!;
       const line = this.describe(e);
       if (line) this.log.push(line);
+      this.react(e);
       if (e.type === 'ability') {
         console.info('[oathbound] action', JSON.stringify({
           turn: this.state.turnNumber, actor: e.unitId, ability: e.abilityId, target: e.target, from: e.preview.from,
@@ -1062,6 +1115,70 @@ export default class BattleScene extends Phaser.Scene {
     }
     this.log = this.log.slice(-14);
     this.logText.setText(this.log.join('\n'));
+  }
+
+  // ---------- barks, oaths, reactions and banners (Writing's strings) ----------
+
+  private bubbles = new Map<string, Phaser.GameObjects.Text>();
+
+  /** A speech bubble above a unit, in world space so it follows pan, zoom and rotation. */
+  private say(unitId: string, line: string, ms = 1800): void {
+    const u = this.state.units.find((x) => x.id === unitId);
+    if (!u || u.status === 'lost') return;
+    this.bubbles.get(unitId)?.destroy();
+    const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
+    const b = text(this, c.x, c.y - 78, line, 12, '#111318').setOrigin(0.5, 1).setDepth(960)
+      .setBackgroundColor('#f5f0e1').setPadding(6, 4, 6, 4).setWordWrapWidth(220).setAlign('center');
+    this.bubbles.set(unitId, b);
+    this.tweens.add({ targets: b, alpha: 0, delay: ms, duration: 300, onComplete: () => { b.destroy(); if (this.bubbles.get(unitId) === b) this.bubbles.delete(unitId); } });
+  }
+
+  /** One random bark line for a player unit. `force` skips the chance roll; a short cooldown stops spam. */
+  private barkFor(unitId: string, kind: string, force = false, chance = 0.4): void {
+    const now = this.time.now;
+    if (!force && (this.barkRand() > chance || now - (this.lastBarkAt[unitId] ?? -1e9) < 4000)) return;
+    const line = bark(unitId, kind, this.barkRand);
+    if (!line) return;
+    this.lastBarkAt[unitId] = now;
+    this.say(unitId, line);
+  }
+
+  private banner(s: string, color: string): void {
+    const b = text(this, 640, 300, s, 40, color).setOrigin(0.5).setDepth(2500).setStroke('#000000', 6).setAlpha(0);
+    this.tweens.add({ targets: b, alpha: 1, duration: 200, yoyo: true, hold: 900, onComplete: () => b.destroy() });
+  }
+
+  private react(e: BattleEvent): void {
+    const isPlayer = (id: string) => this.state.units.find((u) => u.id === id)?.team === 'player';
+    const reaction = (id: string, vow: string, kind: string) => {
+      const line = lookup(`vows.${vow}.reaction.${id}.${kind}`);
+      if (typeof line === 'string') this.say(id, line, 2400);
+    };
+    switch (e.type) {
+      case 'ability':
+        if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'attack');
+        for (const r of e.results) if (r.hit && r.damage > 0 && isPlayer(r.unitId) && getUnit(this.state, r.unitId).status === 'ok') this.barkFor(r.unitId, 'hit', false, 0.5);
+        break;
+      case 'downed':
+        if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'downed', true);
+        else if (e.by && isPlayer(e.by)) this.barkFor(e.by, 'kill', true);
+        break;
+      case 'revived':
+        if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'revived', true);
+        break;
+      case 'vowProgress':
+        if (e.vowId === 'bulwark' && e.progress >= e.goal) reaction(e.unitId, e.vowId, 'held');
+        break;
+      case 'vowFulfilled':
+        // Bulwark is judged at battle end: its reaction belongs to the Reckoning.
+        if (!this.state.winner) { reaction(e.unitId, e.vowId, 'kept'); this.banner(t('ui.banner.vowKept'), '#f5c451'); }
+        break;
+      case 'vowBroken':
+        reaction(e.unitId, e.vowId, 'broken');
+        this.banner(t('ui.banner.vowBroken'), '#a78bfa');
+        break;
+      default:
+    }
   }
 
   private describe(e: BattleEvent): string {
