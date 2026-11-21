@@ -85,6 +85,21 @@ describe('battle flow', () => {
     expect(s.morale.enemy).toBe(10);
   });
 
+  it('a defeated enemy leaves the board and frees its tile (§8, #20)', () => {
+    const s = battle(flatRows(4, 1), [unit('a', 'player', 'sellsword', 0, 0, 'E', { stats: { hp: 30, atk: 99, mag: 0, def: 0, res: 0, spd: 9, move: 4, jump: 2, eva: 0 } }), unit('c', 'enemy', 'sellsword', 1, 0, 'W'), unit('x', 'enemy', 'sellsword', 3, 0)]);
+    startNextTurn(s);
+    s.rngState = 0;
+    let tries = 0;
+    while (getUnit(s, 'c').status === 'ok' && tries++ < 20) {
+      s.acted = false;
+      useAbility(s, 'a', 'strike', { x: 1, y: 0 });
+    }
+    expect(getUnit(s, 'c').status).toBe('lost');
+    expect(s.events.some((e) => e.type === 'downed' && e.unitId === 'c')).toBe(true);
+    expect(s.events.some((e) => e.type === 'lost' && e.unitId === 'c')).toBe(true);
+    expect(getUnit(s, 'a').defeats).toBe(1);
+  });
+
   it('battle is lost when every player unit is downed (§13.6)', () => {
     const s = battle(flatRows(3, 1), [unit('a', 'player', 'sellsword', 0, 0), unit('e', 'enemy', 'sellsword', 2, 0)]);
     getUnit(s, 'a').status = 'downed';

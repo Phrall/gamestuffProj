@@ -23,14 +23,17 @@ export function stepCost(state: BattleState, unit: Unit, a: Point, b: Point): nu
   return 1 + (s.freeClimb ? 0 : Math.max(0, dh));
 }
 
-/** Units on the board that occupy a tile (downed units still do; lost units don't). */
+/**
+ * Units on the board that occupy a tile (downed units still do; lost units don't).
+ * Nothing can end a move on an occupied tile, and it still blocks Shove destinations.
+ */
 export function occupant(state: BattleState, p: Point): Unit | undefined {
   return state.units.find((u) => u.status !== 'lost' && u.pos.x === p.x && u.pos.y === p.y);
 }
 
 /**
- * Dijkstra from the unit's tile. Allies can be passed through but not stopped on;
- * enemies block. `budget` defaults to the unit's Move; pass Infinity for distance fields.
+ * Dijkstra from the unit's tile. Allies and downed units can be passed through but not
+ * stopped on; standing enemies block. `budget` defaults to the unit's Move; pass Infinity for distance fields.
  */
 export function pathTree(state: BattleState, unit: Unit, budget = effectiveStats(state, unit).move, from: Point = unit.pos): PathTree {
   const tree: PathTree = new Map();
@@ -44,7 +47,8 @@ export function pathTree(state: BattleState, unit: Unit, budget = effectiveStats
       const c = stepCost(state, unit, cur.pos, n);
       if (c === null) continue;
       const occ = occupant(state, n);
-      if (occ && occ.team !== unit.team) continue;
+      // Standing enemies block. Downed units (revive window open) can be passed by anyone (§8).
+      if (occ && occ.status === 'ok' && occ.team !== unit.team) continue;
       const cost = cur.cost + c;
       if (cost > budget) continue;
       const k = key(n);

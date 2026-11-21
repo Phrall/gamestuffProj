@@ -45,7 +45,7 @@ export function guardianFor(state: BattleState, attacker: Unit, target: Unit): U
     .filter((g) => {
       const v = state.vows[g.id];
       return g.id !== target.id && g.team === target.team && g.status === 'ok' && v?.vowId === 'bulwark' &&
-        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) === 1;
+        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) <= VOWS.bulwark.guardRadius;
     })
     .sort((a, b) => a.order - b.order)[0];
 }

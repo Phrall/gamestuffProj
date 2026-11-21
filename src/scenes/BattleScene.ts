@@ -130,7 +130,7 @@ export default class BattleScene extends Phaser.Scene {
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
-        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? 'guard 3 attacks' : '2 solo defeats'}` : 'No vow';
+        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal} attack${vowDef(choice).goal > 1 ? 's' : ''}` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
         add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
@@ -212,11 +212,19 @@ export default class BattleScene extends Phaser.Scene {
   private drawUnit(u: Unit): void {
     const v = this.views.get(u.id);
     if (!v) return;
-    v.root.setVisible(u.status !== 'lost');
+    if (u.status === 'lost') {
+      // Death animation (#20): sink and fade out over ~400 ms, then leave the board.
+      v.outline.clear();
+      if (v.root.visible && !this.tweens.isTweening(v.root)) {
+        this.tweens.add({ targets: v.root, alpha: 0, y: v.root.y + 10, duration: 400, delay: 250, onComplete: () => v.root.setVisible(false) });
+      }
+      return;
+    }
+    v.root.setVisible(true).setAlpha(1);
     v.outline.clear();
     const edge = u.team === 'player' ? COLORS.player : COLORS.enemy;
     if (u.status === 'downed') v.outline.lineStyle(1, edge, 0.6).strokeEllipse(0, -4, 30, 12);
-    else if (u.status === 'ok') v.outline.lineStyle(1, edge, 0.6).strokeRoundedRect(-13, -38, 26, 36, 5);
+    else v.outline.lineStyle(1, edge, 0.6).strokeRoundedRect(-13, -38, 26, 36, 5);
     const color = u.status === 'downed' ? COLORS.downed : u.team === 'player' ? COLORS.player : COLORS.enemy;
     const active = this.state.activeId === u.id;
     const lit = this.hoverUnitId === u.id;

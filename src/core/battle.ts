@@ -244,6 +244,11 @@ function downUnit(state: BattleState, t: Unit, by: Unit | null): void {
     changeMorale(state, by.team, ev.enemyDefeated, 'enemy defeated');
   }
   onDowned(state, t, by);
+  // Defeated enemies leave the board at once; only player units get a revive window (§8).
+  if (t.team === 'enemy') {
+    t.status = 'lost';
+    emit(state, { type: 'lost', unitId: t.id });
+  }
 }
 
 /** End the active unit's turn, optionally choosing a facing (§2, §4). */
