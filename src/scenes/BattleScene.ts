@@ -110,7 +110,7 @@ export default class BattleScene extends Phaser.Scene {
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
-        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? 'guard 3 attacks' : '2 solo defeats'}` : 'No vow';
+        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal} attack${vowDef(choice).goal > 1 ? 's' : ''}` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
         add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
