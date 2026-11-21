@@ -55,15 +55,16 @@ describe('Bulwark (§9)', () => {
     expect(s.morale.player).toBe(60);
   });
 
-  it('breaks when an ally within 2 tiles is downed: surge +3 Atk +1 Move, Guard ends', () => {
+  it('breaks when an ally beyond Guard reach but within break radius is downed: surge +3 Atk +1 Move, Guard ends', () => {
+    // v1.5: Guard covers allies within 2 tiles, so the fallen ally stands 3 away (breakRadius 3).
     const s = battle(flatRows(6, 3), [
       unit('maren', 'player', 'sellsword', 0, 1),
-      unit('wren', 'player', 'bowhand', 2, 1, 'N', { stats: { ...DUMMY, hp: 1 } }),
+      unit('wren', 'player', 'bowhand', 3, 1, 'N', { stats: { ...DUMMY, hp: 1 } }),
       unit('e', 'enemy', 'hedgeMage', 5, 1, 'W', { stats: STRONG }),
     ]);
     swearVow(s, 'maren', 'bulwark');
     startNextTurn(s);
-    useAbility(s, 'e', 'spark', { x: 2, y: 1 });
+    useAbility(s, 'e', 'spark', { x: 3, y: 1 });
     expect(s.vows.maren!.status).toBe('broken');
     const st = effectiveStats(s, getUnit(s, 'maren'));
     expect(st.atk).toBe(8 + 3);
@@ -141,5 +142,17 @@ describe('scripted squad sim', () => {
     const { runOne } = await import('../scripts/sim');
     for (let seed = 1; seed <= 10; seed++) expect(runOne(seed, 'scripted').winner).not.toBeNull();
     expect(runOne(5, 'scripted').events).toEqual(runOne(5, 'scripted').events);
+  });
+});
+
+describe('Bulwark Guard reach (v1.5)', () => {
+  it('Guard intercepts for an ally up to guardRadius tiles away', () => {
+    const s = battle(flatRows(6, 3), [
+      unit('maren', 'player', 'sellsword', 0, 1),
+      unit('wren', 'player', 'bowhand', 2, 1, 'N'),
+      unit('e', 'enemy', 'hedgeMage', 5, 1, 'W'),
+    ]);
+    swearVow(s, 'maren', 'bulwark');
+    expect(previewAction(s, getUnit(s, 'e'), 'spark', { x: 2, y: 1 }).interceptedBy).toBe('maren');
   });
 });

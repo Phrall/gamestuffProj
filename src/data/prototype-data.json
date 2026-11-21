@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -96,7 +96,7 @@
       "goal": 2,
       "progress": "interceptedAttack",
       "breakOn": "allyDownedWithin",
-      "breakRadius": 2,
+      "breakRadius": 3,
       "whileSworn": {
         "guard": true
       },
@@ -114,14 +114,15 @@
           "guard": false
         }
       },
-      "guardIgnoresAttackerRange": true
+      "guardIgnoresAttackerRange": true,
+      "guardRadius": 2
     },
     "loneBlade": {
       "name": "Lone Blade",
       "oathLine": "I go in alone, and I come out.",
       "oathClass": "Duelist",
       "shadowClass": "Reaver",
-      "goal": 2,
+      "goal": 1,
       "progress": "defeatWithNoAllyAdjacent",
       "breakOn": "defeatWithAllyAdjacent",
       "whileSworn": {
@@ -498,7 +499,7 @@
       "facing": "S",
       "holdUntilWithin": 6,
       "stats": {
-        "hp": 28,
+        "hp": 30,
         "atk": 9,
         "mag": 2,
         "def": 5,
@@ -522,7 +523,7 @@
       ],
       "facing": "S",
       "stats": {
-        "hp": 24,
+        "hp": 26,
         "atk": 7,
         "mag": 1,
         "def": 4,
@@ -545,7 +546,7 @@
       ],
       "facing": "S",
       "stats": {
-        "hp": 24,
+        "hp": 26,
         "atk": 7,
         "mag": 1,
         "def": 4,
@@ -595,7 +596,7 @@
       "stats": {
         "hp": 18,
         "atk": 2,
-        "mag": 6,
+        "mag": 7,
         "def": 1,
         "res": 5,
         "spd": 5,
