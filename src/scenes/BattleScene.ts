@@ -9,7 +9,7 @@ import { effectiveStats, teamMorale } from '../core/stats';
 import { forecast } from '../core/timeline';
 import { swearVow, vowDef } from '../core/vows';
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
-import { pickTile, tileCenter, topDiamond, type IsoConfig, type Vec } from '../render/iso';
+import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FONT } from './theme';
 
 type Mode =
@@ -38,7 +38,6 @@ const shortName = (u: Unit): string => {
   const tag = ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0];
   return tag ? `${n} ${tag}` : n;
 };
-const ISO_DIR: Record<Facing, Vec> = { E: { x: 1, y: 0.5 }, S: { x: -1, y: 0.5 }, N: { x: 1, y: -0.5 }, W: { x: -1, y: -0.5 } };
 
 export const abilityLabel = (id: string): string => id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 
@@ -54,6 +53,10 @@ export default class BattleScene extends Phaser.Scene {
   private hover: Point | null = null;
   private hoverUnitId: string | null = null;
   private debug = false;
+  private mapGfx: Phaser.GameObjects.Graphics[] = [];
+  private uiCam!: Phaser.Cameras.Scene2D.Camera;
+  private sorted = new WeakSet<Phaser.GameObjects.GameObject>();
+  private drag: { x: number; y: number; moved: boolean } | null = null;
 
   private timeline!: Phaser.GameObjects.Container;
   private moraleText!: Phaser.GameObjects.Text;
@@ -73,6 +76,10 @@ export default class BattleScene extends Phaser.Scene {
     const seed = Number.isInteger(seedParam) && seedParam > 0 ? seedParam : (Date.now() % 1_000_000) + 1;
     const setup = millFordSetup();
     this.state = createBattle(setup, seed);
+    this.iso = { ...this.iso, rot: 0, mapW: this.state.map.width, mapH: this.state.map.height };
+    this.mapGfx = [];
+    this.sorted = new WeakSet();
+    this.drag = null;
     this.vowChoice = Object.fromEntries(setup.units.filter((u) => u.team === 'player').map((u) => [u.id, u.suggestedVow ?? null]));
     this.views.clear();
     this.overlays = [];
@@ -81,9 +88,11 @@ export default class BattleScene extends Phaser.Scene {
     this.eventCursor = 0;
     this.mode = { kind: 'busy' };
 
+    this.setupCameras();
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
     this.drawUi();
+    this.drawCameraButtons();
     this.bindInput();
     this.exposeForQa();
     this.showDeploy(seed);
@@ -140,10 +149,16 @@ export default class BattleScene extends Phaser.Scene {
 
   private drawMap(): void {
     const { map } = this.state;
+    for (const g of this.mapGfx) g.destroy();
+    for (const g of this.overlays) g.destroy();
+    this.mapGfx = [];
+    this.overlays = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const t = tileAt(map, { x, y })!;
-        const g = this.add.graphics().setDepth((x + y) * 10);
+        const d0 = depthOf(this.iso, x, y) * 10;
+        const g = this.add.graphics().setDepth(d0);
+        this.mapGfx.push(g);
         const top = topDiamond(this.iso, x, y, t.height);
         const [n, e, s, w] = top as [Vec, Vec, Vec, Vec];
         const drop = t.height * this.iso.step + this.iso.step / 2;
@@ -156,7 +171,7 @@ export default class BattleScene extends Phaser.Scene {
           const c = tileCenter(this.iso, x, y, t.height);
           g.fillStyle(COLORS.boulder).fillEllipse(c.x, c.y - 8, 34, 26);
         }
-        this.overlays.push(this.add.graphics().setDepth((x + y) * 10 + 1));
+        this.overlays.push(this.add.graphics().setDepth(d0 + 1));
       }
     }
   }
@@ -178,7 +193,7 @@ export default class BattleScene extends Phaser.Scene {
   private placeUnit(u: Unit, p: Point, view = this.views.get(u.id)): void {
     if (!view) return;
     const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
-    view.root.setPosition(c.x, c.y).setDepth((p.x + p.y) * 10 + 5);
+    view.root.setPosition(c.x, c.y).setDepth(depthOf(this.iso, p.x, p.y) * 10 + 5);
   }
 
   private drawUnit(u: Unit): void {
@@ -199,7 +214,7 @@ export default class BattleScene extends Phaser.Scene {
     }
     v.nub.clear();
     if (u.status === 'ok') {
-      const d = ISO_DIR[u.facing];
+      const d = screenDir(this.iso, DIRS[u.facing]);
       v.nub.fillStyle(0xffffff, 0.9).fillTriangle(d.x * 22, d.y * 22, d.x * 10 - d.y * 8, d.y * 10 + d.x * 4, d.x * 10 + d.y * 8, d.y * 10 - d.x * 4);
     }
     this.drawSigil(u, v);
@@ -253,7 +268,7 @@ export default class BattleScene extends Phaser.Scene {
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 640, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000);
-    text(this, 12, 700, 'D: debug   Esc/right-click: cancel   1-6: actions   Tab/Enter: pick tile   W: wait', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
+    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   R: reset view   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
   }
 
   private rebuildButtons(): void {
@@ -300,7 +315,7 @@ export default class BattleScene extends Phaser.Scene {
     const entries = forecast(this.state.units, 8, active);
     const w = 96;
     const x0 = 640 - (entries.length * (w + 6)) / 2;
-    text(this, x0 - 12, 30, 'NEXT', 12, COLORS.textDim).setOrigin(1, 0.5).setDepth(1000);
+    this.timeline.add(text(this, x0 - 12, 30, 'NEXT', 12, COLORS.textDim).setOrigin(1, 0.5));
     entries.forEach((e, i) => {
       const u = getUnit(this.state, e.unitId);
       const x = x0 + i * (w + 6);
@@ -310,6 +325,14 @@ export default class BattleScene extends Phaser.Scene {
         .setInteractive();
       bg.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
       bg.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
+      // Clicking a chip points at that unit's tile, so units hidden on the board can still be targeted.
+      bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+        ev.stopPropagation();
+        if (u.status === 'lost') return;
+        const already = this.hover && samePoint(this.hover, u.pos);
+        this.setHover({ ...u.pos });
+        if (already && this.mode.kind === 'target') void this.clickTile(u.pos);
+      });
       const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${shortName(u)}`, 12).setOrigin(0.5);
       this.timeline.add([bg, t]);
     });
@@ -468,13 +491,37 @@ export default class BattleScene extends Phaser.Scene {
   private bindInput(): void {
     this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      const t = this.pick({ x: p.worldX, y: p.worldY });
+      if (this.drag && p.leftButtonDown()) {
+        const cam = this.cameras.main;
+        const dx = p.x - this.drag.x;
+        const dy = p.y - this.drag.y;
+        if (this.drag.moved || Math.hypot(dx, dy) > 6) {
+          this.drag.moved = true;
+          cam.scrollX -= dx / cam.zoom;
+          cam.scrollY -= dy / cam.zoom;
+          this.drag.x = p.x;
+          this.drag.y = p.y;
+          return;
+        }
+      }
+      const t = this.onBoard(p) ? this.pick(this.cameras.main.getWorldPoint(p.x, p.y)) : null;
       if (t?.x === this.hover?.x && t?.y === this.hover?.y) return;
       this.setHover(t);
     });
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (p.rightButtonDown()) this.cancel();
-      else if (this.hover) void this.clickTile(this.hover);
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+      if (p.rightButtonDown()) { this.cancel(); return; }
+      if (over.length || !this.onBoard(p)) return;
+      this.drag = { x: p.x, y: p.y, moved: false };
+    });
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      const d = this.drag;
+      this.drag = null;
+      if (!d || d.moved || p.rightButtonReleased()) return;
+      const t = this.pick(this.cameras.main.getWorldPoint(p.x, p.y));
+      if (t) { this.hover = t; void this.clickTile(t); }
+    });
+    this.input.on('wheel', (p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      if (this.onBoard(p)) this.zoomBy(dy > 0 ? 1 / 1.15 : 1.15, p);
     });
     const kb = this.input.keyboard!;
     kb.on('keydown', (e: KeyboardEvent) => {
@@ -482,11 +529,26 @@ export default class BattleScene extends Phaser.Scene {
       else if (e.key === 'w' || e.key === 'W') this.pressAction(this.buttons.findIndex((b) => b.id === 'wait'));
       else if (e.key === 'Escape') this.cancel();
       else if (e.key === 'd' || e.key === 'D') this.toggleDebug();
+      else if (e.key === 'q' || e.key === 'Q') this.rotateView(-1);
+      else if (e.key === 'e' || e.key === 'E') this.rotateView(1);
+      else if (e.key === 'r' || e.key === 'R' || e.key === 'Home') this.resetCamera();
+      else if (e.key === '+' || e.key === '=') this.zoomBy(1.15);
+      else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.15);
+      else if (this.mode.kind !== 'facing' && e.key.startsWith('Arrow')) {
+        const cam = this.cameras.main;
+        const step = 48 / cam.zoom;
+        if (e.key === 'ArrowLeft') cam.scrollX -= step;
+        if (e.key === 'ArrowRight') cam.scrollX += step;
+        if (e.key === 'ArrowUp') cam.scrollY -= step;
+        if (e.key === 'ArrowDown') cam.scrollY += step;
+      }
       else if (e.key === 'Tab') { e.preventDefault(); this.cycleTarget(e.shiftKey ? -1 : 1); }
       else if (e.key === 'Enter' && (this.mode.kind === 'target' || this.mode.kind === 'move') && this.hover) void this.clickTile(this.hover);
       else if (this.mode.kind === 'facing') {
-        const map: Record<string, Facing> = { ArrowUp: 'N', ArrowRight: 'E', ArrowDown: 'S', ArrowLeft: 'W' };
-        const f = map[e.key];
+        // Arrow keys mean the same screen direction at every rotation.
+        const screen: Record<string, Facing> = { ArrowUp: 'N', ArrowRight: 'E', ArrowDown: 'S', ArrowLeft: 'W' };
+        const want = screen[e.key] ? DIRS[screen[e.key]!] : null;
+        const f = want ? FACINGS.find((g) => samePoint(viewDir(this.iso, DIRS[g]), want)) : undefined;
         const u = activeUnit(this.state);
         if (f && u) { this.mode = { kind: 'facing', facing: f }; u.facing = f; this.refresh(); }
         if (e.key === 'Enter') this.confirmFacing();
@@ -494,12 +556,86 @@ export default class BattleScene extends Phaser.Scene {
     });
   }
 
+  // ---------- camera (#19) ----------
+
+  /**
+   * The main camera shows the board and can pan, zoom and rotate; a second, fixed camera
+   * draws the HUD. Objects at depth 999 and above are HUD; everything else is board.
+   */
+  private setupCameras(): void {
+    const main = this.cameras.main;
+    main.setZoom(1).setScroll(0, 0);
+    this.uiCam = this.cameras.add(0, 0, 1280, 720).setName('ui');
+    this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this));
+  }
+
+  private sortCameras(): void {
+    for (const o of this.children.list) {
+      if (this.sorted.has(o)) continue;
+      this.sorted.add(o);
+      const depth = (o as unknown as { depth: number }).depth;
+      if (depth >= 999) this.cameras.main.ignore(o);
+      else this.uiCam.ignore(o);
+    }
+  }
+
+  /** True when the pointer is over the board area, not the timeline strip or the bottom panels. */
+  private onBoard(p: Phaser.Input.Pointer): boolean {
+    return p.y > 66 && p.y < 540;
+  }
+
+  private zoomBy(f: number, at?: Phaser.Input.Pointer): void {
+    // Keep the world point under the pointer fixed. Worked out by hand because the
+    // camera matrix only updates at render time.
+    const cam = this.cameras.main;
+    const sx = at?.x ?? cam.width / 2;
+    const sy = at?.y ?? cam.height / 2;
+    const wx = (sx - cam.width / 2) / cam.zoom + cam.width / 2 + cam.scrollX;
+    const wy = (sy - cam.height / 2) / cam.zoom + cam.height / 2 + cam.scrollY;
+    const z = Phaser.Math.Clamp(cam.zoom * f, 0.6, 2.2);
+    cam.setZoom(z);
+    cam.scrollX = wx - (sx - cam.width / 2) / z - cam.width / 2;
+    cam.scrollY = wy - (sy - cam.height / 2) / z - cam.height / 2;
+  }
+
+  private resetCamera(): void {
+    this.cameras.main.setZoom(1).setScroll(0, 0);
+    if ((this.iso.rot ?? 0) !== 0) this.rotateView(-(this.iso.rot ?? 0));
+  }
+
+  /** Turn the board a quarter turn (dir 1 = clockwise), keeping the map centre where it was on screen. */
+  private rotateView(dir: number): void {
+    if (this.mode.kind === 'busy' && this.tweens.getTweens().length) return;
+    const { width, height } = this.state.map;
+    const mid = (w: number, h: number) => tileCenter(this.iso, (w - 1) / 2, (h - 1) / 2, 0);
+    const before = mid(width, height);
+    this.iso = { ...this.iso, rot: ((((this.iso.rot ?? 0) + dir) % 4) + 4) % 4 };
+    const after = mid(width, height);
+    this.cameras.main.scrollX += after.x - before.x;
+    this.cameras.main.scrollY += after.y - before.y;
+    this.drawMap();
+    for (const u of this.state.units) this.placeUnit(u, u.pos);
+    this.refresh();
+  }
+
+  private drawCameraButtons(): void {
+    const items: [string, () => void][] = [['⟲ Q', () => this.rotateView(-1)], ['E ⟳', () => this.rotateView(1)], ['Reset', () => this.resetCamera()]];
+    items.forEach(([label, fn], i) => {
+      const x = 1270 - (items.length - i) * 66;
+      const bg = this.add.rectangle(x, 56, 60, 26, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
+      text(this, x + 30, 69, label, 13).setOrigin(0.5).setDepth(1001);
+      bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); fn(); });
+    });
+  }
+
   /** Units first (their bodies stand above the terrain), then tiles front to back. */
   private pick(p: Vec): Point | null {
-    const units = this.state.units.filter((u) => u.status !== 'lost').sort((a, b) => b.pos.x + b.pos.y - (a.pos.x + a.pos.y));
+    const units = this.state.units.filter((u) => u.status !== 'lost').sort((a, b) => depthOf(this.iso, b.pos.x, b.pos.y) - depthOf(this.iso, a.pos.x, a.pos.y));
     for (const u of units) {
       const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
-      if (Math.abs(p.x - c.x) <= 14 && p.y >= c.y - 48 && p.y <= c.y - 2) return { ...u.pos };
+      const top = u.status === 'downed' ? c.y - 14 : c.y - 50;
+      if (Math.abs(p.x - c.x) <= 16 && p.y >= top && p.y <= c.y + 2) return { ...u.pos };
     }
     return pickTile(this.iso, this.state.map.width, this.state.map.height, (x, y) => heightAt(this.state.map, { x, y }), p);
   }
@@ -652,7 +788,7 @@ export default class BattleScene extends Phaser.Scene {
     let prev = path.length ? { ...path[0]! } : u.pos;
     for (const p of path) {
       const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
-      v.root.setDepth(Math.max(p.x + p.y, prev.x + prev.y) * 10 + 5);
+      v.root.setDepth(Math.max(depthOf(this.iso, p.x, p.y), depthOf(this.iso, prev.x, prev.y)) * 10 + 5);
       await new Promise<void>((r) => this.tweens.add({ targets: v.root, x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
       prev = p;
     }
@@ -662,7 +798,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private floatText(u: Unit, s: string, color: string): void {
     const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
-    const t = text(this, c.x, c.y - 60, s, 20, color).setOrigin(0.5).setDepth(2000).setStroke('#000000', 4);
+    const t = text(this, c.x, c.y - 60, s, 20, color).setOrigin(0.5).setDepth(900).setStroke('#000000', 4);
     this.tweens.add({ targets: t, y: t.y - 30, alpha: 0, duration: 1100, delay: 200, onComplete: () => t.destroy() });
   }
 
@@ -732,8 +868,17 @@ export default class BattleScene extends Phaser.Scene {
     for (let dy = -46; dy <= 14; dy += 2) {
       for (let dx = -28; dx <= 28; dx += 4) {
         const p = { x: c.x + dx, y: c.y + dy };
-        const hit = this.pick(p);
-        if (hit && samePoint(hit, t)) return p;
+        // Require a small margin so a click there lands on the tile, not on an edge.
+        const ok = [[0, 0], [3, 3], [-3, 3], [3, -3], [-3, -3]].every(([ox, oy]) => {
+          const hit = this.pick({ x: p.x + ox!, y: p.y + oy! });
+          return !!hit && samePoint(hit, t);
+        });
+        if (!ok) continue;
+        // Back to screen space: QA clicks with page coordinates.
+        const cam = this.cameras.main;
+        const sx = (p.x - cam.scrollX - cam.width / 2) * cam.zoom + cam.width / 2;
+        const sy = (p.y - cam.scrollY - cam.height / 2) * cam.zoom + cam.height / 2;
+        if (sy > 66 && sy < 540 && sx >= 0 && sx <= 1280) return { x: sx, y: sy };
       }
     }
     return null;
@@ -747,6 +892,10 @@ export default class BattleScene extends Phaser.Scene {
       preview: (actorId: string, abilityId: string, x: number, y: number) => previewAction(this.state, getUnit(this.state, actorId), abilityId, { x, y }),
       /** A screen point that picks tile (x, y), or null if it is fully hidden. For click automation. */
       screenPointFor: (x: number, y: number) => this.screenPointFor({ x, y }),
+      /** Turn the view a quarter turn (1 = clockwise, -1 = counter-clockwise). */
+      rotate: (dir = 1) => this.rotateView(dir),
+      resetCamera: () => this.resetCamera(),
+      get camera() { const c = scene.cameras.main; return { rot: scene.iso.rot ?? 0, zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY }; },
       /** What the enemy AI would do with this unit; QA uses it for automated runs. */
       plan: (unitId: string) => planTurn(this.state, getUnit(this.state, unitId)),
     };

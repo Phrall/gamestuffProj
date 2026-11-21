@@ -9,15 +9,60 @@ export interface IsoConfig {
   tileH: number;
   /** Screen pixels per height level. */
   step: number;
+  /** View rotation in quarter turns (0-3). Needs mapW/mapH when not 0. */
+  rot?: number;
+  mapW?: number;
+  mapH?: number;
 }
 
 export interface Vec { x: number; y: number }
 
+const rot = (c: IsoConfig): number => (((c.rot ?? 0) % 4) + 4) % 4;
+
+/**
+ * Map coordinates to view coordinates for the current rotation. Each quarter turn
+ * turns the board 90° clockwise on screen; the view is always drawn back (low x+y)
+ * to front (high x+y).
+ */
+export function toView(c: IsoConfig, x: number, y: number): Vec {
+  const w = (c.mapW ?? 1) - 1;
+  const h = (c.mapH ?? 1) - 1;
+  switch (rot(c)) {
+    case 1: return { x: h - y, y: x };
+    case 2: return { x: w - x, y: h - y };
+    case 3: return { x: y, y: w - x };
+    default: return { x, y };
+  }
+}
+
+/** A map direction (e.g. a facing) turned into view space. */
+export function viewDir(c: IsoConfig, d: Vec): Vec {
+  switch (rot(c)) {
+    case 1: return { x: -d.y, y: d.x };
+    case 2: return { x: -d.x, y: -d.y };
+    case 3: return { x: d.y, y: -d.x };
+    default: return { x: d.x, y: d.y };
+  }
+}
+
+/** Screen direction of a view-space step (for facing arrows). */
+export function screenDir(c: IsoConfig, d: Vec): Vec {
+  const v = viewDir(c, d);
+  return { x: v.x - v.y, y: (v.x + v.y) / 2 };
+}
+
+/** Draw order of a tile: higher is nearer the viewer. */
+export function depthOf(c: IsoConfig, x: number, y: number): number {
+  const v = toView(c, x, y);
+  return v.x + v.y;
+}
+
 /** Screen position of the center of a tile's top face. */
 export function tileCenter(c: IsoConfig, x: number, y: number, h: number): Vec {
+  const v = toView(c, x, y);
   return {
-    x: c.originX + (x - y) * (c.tileW / 2),
-    y: c.originY + (x + y) * (c.tileH / 2) - h * c.step,
+    x: c.originX + (v.x - v.y) * (c.tileW / 2),
+    y: c.originY + (v.x + v.y) * (c.tileH / 2) - h * c.step,
   };
 }
 
@@ -56,11 +101,11 @@ export function pointInPolygon(p: Vec, poly: Vec[]): boolean {
  * tile hides the tiles behind it.
  */
 export function pickTile(c: IsoConfig, width: number, height: number, heightOf: (x: number, y: number) => number, p: Vec): Vec | null {
-  for (let sum = width + height - 2; sum >= 0; sum--) {
-    for (let x = Math.min(sum, width - 1); x >= 0 && sum - x < height; x--) {
-      const y = sum - x;
-      if (pointInPolygon(p, silhouette(c, x, y, heightOf(x, y)))) return { x, y };
-    }
+  const tiles: Vec[] = [];
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) tiles.push({ x, y });
+  tiles.sort((a, b) => depthOf(c, b.x, b.y) - depthOf(c, a.x, a.y));
+  for (const t of tiles) {
+    if (pointInPolygon(p, silhouette(c, t.x, t.y, heightOf(t.x, t.y)))) return t;
   }
   return null;
 }

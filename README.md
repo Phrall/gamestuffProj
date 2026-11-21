@@ -37,11 +37,12 @@ The game opens at http://localhost:5173 and reloads as you edit.
 - **Wait / End turn:** `W`. Waiting without moving or acting brings your next turn sooner (the timeline shows where).
 - **Facing:** after acting, click a gold tile or use the arrow keys, then Enter.
 - `Esc` or right-click cancels. `D` toggles the debug overlay.
+- **Camera:** drag the board or use the arrow keys to pan, mouse wheel or `+`/`-` to zoom, `Q`/`E` (or the buttons at top right) to rotate 90°, `R` to reset. Clicking a unit's chip in the turn order selects its tile, then a second click confirms a target.
 - Add `?seed=123` to the URL to replay a battle exactly.
 
 ## For QA
 - Every action logs `[oathbound] action {...}` to the console with the preview and the actual result.
-- `window.oathbound.state` is the live battle state; `window.oathbound.preview(actorId, abilityId, x, y)` returns a preview; `window.oathbound.plan(unitId)` returns what the AI would do; `window.oathbound.screenPointFor(x, y)` gives a clickable screen point for a tile.
+- `window.oathbound.state` is the live battle state; `window.oathbound.preview(actorId, abilityId, x, y)` returns a preview; `window.oathbound.plan(unitId)` returns what the AI would do; `window.oathbound.screenPointFor(x, y)` gives a clickable screen point for a tile. It accounts for pan, zoom and rotation. `rotate(dir)`, `resetCamera()` and `camera` (rot, zoom, scroll) drive and read the view.
 
 ## Code map
 - `src/data/prototype-data.json` all rules, classes, abilities, vows, the map and units, owned by Game Design. Edit numbers here, not in code.
