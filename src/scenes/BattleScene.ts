@@ -122,15 +122,18 @@ export default class BattleScene extends Phaser.Scene {
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
-      add(this.add.rectangle(330, 150, 620, 330, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      add(this.add.rectangle(330, 150, 620, 370, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
       add(text(this, 640, 172, 'Swear your vows', 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
       add(text(this, 640, 206, 'Click a vow to change it. Each unit may swear one, or none.', 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      if (Object.values(this.vowChoice).includes('bulwark')) {
+        add(text(this, 640, 414, `Bulwark: guard an ally from ${vowDef('bulwark').goal} attack, and let no ally within ${VOWS.bulwark.breakRadius} tiles fall. Kept at battle end; breaks if an ally within ${VOWS.bulwark.breakRadius} falls, even after the guard.`, 11, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(580).setAlign('center'));
+      }
       this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
         const y = 240 + i * 44;
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
-        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal} attack${vowDef(choice).goal > 1 ? 's' : ''}` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
+        const label = choice ? `${vowDef(choice).name}: ${choice === 'bulwark' ? `guard ${vowDef(choice).goal}, none within ${VOWS.bulwark.breakRadius} fall` : `${vowDef(choice).goal} solo defeat${vowDef(choice).goal > 1 ? 's' : ''}`}` : 'No vow';
         add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
@@ -138,8 +141,8 @@ export default class BattleScene extends Phaser.Scene {
           draw();
         });
       });
-      const go = add(this.add.rectangle(540, 424, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
-      add(text(this, 640, 444, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
+      const go = add(this.add.rectangle(540, 464, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      add(text(this, 640, 484, 'Begin battle', 18).setOrigin(0.5).setDepth(3002));
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
