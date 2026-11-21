@@ -8,6 +8,7 @@ import { occupant, pathTo, pathTree, reachableTiles } from '../core/pathfinding'
 import { effectiveStats, teamMorale } from '../core/stats';
 import { forecast } from '../core/timeline';
 import { swearVow, vowDef } from '../core/vows';
+import { movePreview, type MovePreview, type Threat } from '../core/movePreview';
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FONT } from './theme';
@@ -60,6 +61,10 @@ export default class BattleScene extends Phaser.Scene {
   private sorted = new WeakSet<Phaser.GameObjects.GameObject>();
   private drag: { x: number; y: number; moved: boolean; button: number } | null = null;
   private compass!: Phaser.GameObjects.Graphics;
+  /** Move preview for the hovered tile (#21), cached per tile for the current turn. */
+  private movePv: MovePreview | null = null;
+  private movePvCache = new Map<string, MovePreview>();
+  private chips: Phaser.GameObjects.GameObject[] = [];
 
   private timeline!: Phaser.GameObjects.Container;
   private moraleText!: Phaser.GameObjects.Text;
@@ -90,6 +95,9 @@ export default class BattleScene extends Phaser.Scene {
     this.log = [];
     this.eventCursor = 0;
     this.mode = { kind: 'busy' };
+    this.movePvCache = new Map();
+    this.movePv = null;
+    this.chips = [];
 
     this.setupCameras();
     this.drawMap();
@@ -403,6 +411,8 @@ export default class BattleScene extends Phaser.Scene {
     this.unitPanel.setText(a ? this.unitSummary(a, a.team === 'player' ? '▶ ' : 'Enemy turn: ') : '');
     if (preview) {
       this.previewPanel.setText(this.previewText(preview));
+    } else if (this.movePv) {
+      this.previewPanel.setText(this.movePreviewText(this.movePv));
     } else {
       const hu = this.hover ? occupant(this.state, this.hover) : this.hoverUnitId ? getUnit(this.state, this.hoverUnitId) : undefined;
       this.previewPanel.setText(hu && hu.id !== a?.id ? this.unitSummary(hu, '') : this.tileInfo());
@@ -445,6 +455,7 @@ export default class BattleScene extends Phaser.Scene {
   /** Redraw tile highlights for the current mode and hover. */
   private refreshOverlays(): ActionPreview | null {
     for (const g of this.overlays) g.clear();
+    this.movePv = null;
     const u = activeUnit(this.state);
     let preview: ActionPreview | null = null;
     const paint = (p: Point, color: number, alpha: number, stroke = false) => {
@@ -460,6 +471,18 @@ export default class BattleScene extends Phaser.Scene {
         for (const n of reachableTiles(this.state, u)) paint(n.pos, COLORS.move, 0.35);
         if (this.hover && tree.has(key(this.hover)) && !occupant(this.state, this.hover)) {
           for (const p of pathTo(tree, this.hover)) paint(p, COLORS.move, 0.55);
+        }
+        // Move preview (#21): from a reachable tile, or the unit's own tile ("stay and attack").
+        const h = this.hover;
+        if (h && (samePoint(h, u.pos) || (tree.has(key(h)) && !occupant(this.state, h)))) {
+          this.movePv = this.movePreviewAt(u, h);
+          paint(h, PV.bone, 0.75);
+          for (const t of this.movePv.threats) {
+            const e = getUnit(this.state, t.unitId);
+            const g = this.overlays[e.pos.y * this.state.map.width + e.pos.x];
+            const c = tileCenter(this.iso, e.pos.x, e.pos.y, heightAt(this.state.map, e.pos));
+            g?.lineStyle(3, PV.ring, 1).strokeEllipse(c.x, c.y, 44, 20);
+          }
         }
       } else if (this.mode.kind === 'target') {
         const a = ABILITIES[this.mode.abilityId]!;
@@ -488,6 +511,7 @@ export default class BattleScene extends Phaser.Scene {
   private refresh(): void {
     const preview = this.refreshOverlays();
     this.refreshUnits();
+    this.drawChips();
     this.refreshPanels(preview);
     this.refreshButtons();
     this.refreshTimeline();
@@ -495,6 +519,70 @@ export default class BattleScene extends Phaser.Scene {
     this.refreshHint();
     this.flushEvents();
     if (this.debug) this.debugText.setText(this.debugDump(preview));
+  }
+
+  // ---------- move preview (#21) ----------
+
+  private movePreviewAt(u: Unit, p: Point): MovePreview {
+    const k = `${this.state.turnNumber}:${u.id}:${key(p)}`;
+    let mp = this.movePvCache.get(k);
+    if (!mp) {
+      if (this.movePvCache.size > 200) this.movePvCache.clear();
+      mp = movePreview(this.state, u, p);
+      this.movePvCache.set(k, mp);
+    }
+    return mp;
+  }
+
+  /** One chip per enemy in reach: ability codes in action-grid order (max 3, then +N), facing, skull. */
+  private chipText(t: Threat): string {
+    const codes = t.abilities.map((a) => (a.area ? `[${abilityCode(a.abilityId)}]` : abilityCode(a.abilityId)));
+    const shown = codes.length > 3 ? [...codes.slice(0, 3), `+${codes.length - 3}`] : codes;
+    return `${shown.join(' ')}  ${sideTag(t)}${t.canDown ? ' ☠' : ''}`;
+  }
+
+  private drawChips(): void {
+    for (const o of this.chips) o.destroy();
+    this.chips = [];
+    const mp = this.movePv;
+    if (!mp) return;
+    const placed: Phaser.Geom.Rectangle[] = [];
+    const lines = this.add.graphics().setDepth(949);
+    this.chips.push(lines);
+    for (const t of mp.threats) {
+      const e = getUnit(this.state, t.unitId);
+      const c = tileCenter(this.iso, e.pos.x, e.pos.y, heightAt(this.state.map, e.pos));
+      const chip = text(this, c.x, c.y - 52, this.chipText(t), 11, '#fde2dc').setOrigin(0.5, 1).setDepth(950)
+        .setBackgroundColor('#5a1f16').setPadding(4, 2, 4, 2);
+      // Never stack chips: slide along the same row, right first, then left.
+      let r = chip.getBounds();
+      for (let i = 1; placed.some((q) => Phaser.Geom.Intersects.RectangleToRectangle(q, r)) && i < 12; i++) {
+        const dx = (Math.ceil(i / 2) * (r.width + 4)) * (i % 2 ? 1 : -1);
+        chip.setX(c.x + dx);
+        r = chip.getBounds();
+      }
+      if (chip.x !== c.x) lines.lineStyle(1.5, PV.ring, 1).lineBetween(chip.x, r.bottom, c.x, c.y - 46);
+      placed.push(r);
+      this.chips.push(chip);
+    }
+  }
+
+  private movePreviewText(mp: MovePreview): string {
+    const n = mp.threats.length;
+    const lines = [n ? `From this tile · ${n} target${n > 1 ? 's' : ''}` : 'No targets from here'];
+    for (const t of mp.threats.slice(0, 4)) {
+      const codes = t.abilities.map((a) => `${a.area ? `[${abilityCode(a.abilityId)}]` : abilityCode(a.abilityId)}${a.hitsAlly ? '⚠' : ''}`).join(' ');
+      lines.push(`${shortName(getUnit(this.state, t.unitId)).padEnd(12)} ${codes.padEnd(14)} ${sideTag(t)}${t.canDown ? ' ☠' : ''}`);
+    }
+    if (n > 4) lines.push(`+${n - 4} more`);
+    const used = [...new Set(mp.threats.flatMap((t) => t.abilities.map((a) => a.abilityId)))];
+    if (used.length) lines.push('', used.map((id) => `${abilityCode(id)} ${abilityLabel(id)}`).join(' · '));
+    if (mp.threats.some((t) => t.abilities.some((a) => a.hitsAlly))) lines.push('⚠ would also catch an ally');
+    for (const x of mp.excluded) {
+      lines.push(x.reason === 'cooldown' ? `${abilityLabel(x.abilityId)} is cooling down (ready in ${x.readyIn}), so it is left out.` : `${abilityLabel(x.abilityId)} is used, so it is left out.`);
+    }
+    if (mp.breaksLoneBlade) lines.push('Downing a foe here breaks Lone Blade (ally adjacent)');
+    return lines.join('\n');
   }
 
   private refreshHint(): void {
@@ -1024,8 +1112,27 @@ export default class BattleScene extends Phaser.Scene {
       get camera() { const c = scene.cameras.main; return { rot: scene.iso.rot ?? 0, zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY }; },
       /** What the enemy AI would do with this unit; QA uses it for automated runs. */
       plan: (unitId: string) => planTurn(this.state, getUnit(this.state, unitId)),
+      /** What the active unit could hit from (x, y) if it moved there (#21). */
+      movePreview: (x: number, y: number) => {
+        const u = activeUnit(this.state);
+        return u ? movePreview(this.state, u, { x, y }) : null;
+      },
     };
   }
+}
+
+/** Move preview palette (UX §1). */
+const PV = { bone: 0xede6d3, ring: 0xc0533f };
+
+/** Two-letter stand-in for the ability icon until Art's icons land. */
+function abilityCode(id: string): string {
+  const words = abilityLabel(id).split(' ');
+  return words.length > 1 ? words.map((w) => w[0]).join('') : words[0]!.slice(0, 2);
+}
+
+function sideTag(t: Threat): string {
+  if (t.braced) return 'Front (Braced)';
+  return t.side[0]!.toUpperCase() + t.side.slice(1);
 }
 
 function describeEffect(abilityId: string): string {
