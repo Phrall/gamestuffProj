@@ -32,7 +32,7 @@ The game opens at http://localhost:5173 and reloads as you edit.
 - `.github/workflows/` CI (typecheck, test, build) and Pages deploy
 
 ## Playing the prototype battle (Mill Ford)
-- **Move:** click a blue tile (or Tab through tiles and press Enter). Moving is optional and comes before acting.
+- **Move:** click a blue tile (or Tab through tiles and press Enter). Moving is optional and comes before acting. Hovering a move tile (or your own tile) rings every enemy you could hit from there. Each ring gets a chip with the ready abilities that reach it (area ones in [brackets]), the facing you'd hit, and ☠ if one would down it. The right panel lists the same, plus anything left out for cooldown.
 - **Act:** pick an action (buttons or keys 1-6), hover a target to see hit %, exact damage and HP after, then click to confirm.
 - **Wait / End turn:** `W`. Waiting without moving or acting brings your next turn sooner (the timeline shows where).
 - **Facing:** after acting, click a gold tile or use the arrow keys, then Enter.
@@ -42,7 +42,7 @@ The game opens at http://localhost:5173 and reloads as you edit.
 
 ## For QA
 - Every action logs `[oathbound] action {...}` to the console with the preview and the actual result.
-- `window.oathbound.state` is the live battle state; `window.oathbound.preview(actorId, abilityId, x, y)` returns a preview; `window.oathbound.plan(unitId)` returns what the AI would do; `window.oathbound.screenPointFor(x, y)` gives a clickable screen point for a tile. It accounts for pan, zoom and rotation. `rotate(dir)`, `resetCamera()` and `camera` (rot, zoom, scroll) drive and read the view.
+- `window.oathbound.state` is the live battle state; `window.oathbound.preview(actorId, abilityId, x, y)` returns a preview; `window.oathbound.plan(unitId)` returns what the AI would do; `window.oathbound.movePreview(x, y)` returns who the active unit could hit from (x, y) and with what; `window.oathbound.screenPointFor(x, y)` gives a clickable screen point for a tile. It accounts for pan, zoom and rotation. `rotate(dir)`, `resetCamera()` and `camera` (rot, zoom, scroll) drive and read the view.
 
 ## Code map
 - `src/data/prototype-data.json` all rules, classes, abilities, vows, the map and units, owned by Game Design. Edit numbers here, not in code.
