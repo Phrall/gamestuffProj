@@ -136,14 +136,15 @@ export default class BattleScene extends Phaser.Scene {
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
-      add(this.add.rectangle(330, 150, 620, 370, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
-      add(text(this, 640, 172, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
-      add(text(this, 640, 206, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      add(this.add.rectangle(330, 122, 620, 460, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      add(text(this, 640, 140, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
+      add(text(this, 640, 174, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
       const chosen = [...new Set(Object.values(this.vowChoice).filter((v): v is VowId => !!v))];
       const notes = chosen.map((v) => `${vowName(v)}: ${t(`ui.vows.${v}.summary`, vowParams(v))} ${t(`ui.vows.${v}.breaks`, vowParams(v))}`);
-      if (notes.length) add(text(this, 640, 414, notes.join('\n'), 11, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(590).setAlign('center'));
+      const notesY = 214 + this.state.units.filter((u) => u.team === 'player').length * 44;
+      if (notes.length) add(text(this, 640, notesY, notes.join('\n\n'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(590).setAlign('center'));
       this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
-        const y = 240 + i * 44;
+        const y = 206 + i * 44;
         const choice = this.vowChoice[u.id] ?? null;
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
@@ -155,8 +156,8 @@ export default class BattleScene extends Phaser.Scene {
           draw();
         });
       });
-      const go = add(this.add.rectangle(540, 464, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
-      add(text(this, 640, 484, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
+      const go = add(this.add.rectangle(540, 524, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      add(text(this, 640, 544, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
@@ -171,7 +172,7 @@ export default class BattleScene extends Phaser.Scene {
       let delay = 0;
       for (const [id, vow] of Object.entries(this.vowChoice)) {
         const line = vow ? lookup(`vows.${vow}.oath.${id}`) : undefined;
-        if (typeof line === 'string') { this.time.delayedCall(delay, () => this.say(id, line, 2200)); delay += 900; }
+        if (typeof line === 'string') { this.time.delayedCall(delay, () => this.say(id, line, 1800)); delay += 2200; }
       }
       this.nextTurn();
     };
@@ -342,7 +343,7 @@ export default class BattleScene extends Phaser.Scene {
     panel(890, 380);
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
-    this.hint = text(this, 640, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000);
+    this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
     text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   C: center   R: reset   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
   }
 
@@ -1127,7 +1128,7 @@ export default class BattleScene extends Phaser.Scene {
     if (!u || u.status === 'lost') return;
     this.bubbles.get(unitId)?.destroy();
     const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
-    const b = text(this, c.x, c.y - 78, line, 12, '#111318').setOrigin(0.5, 1).setDepth(960)
+    const b = text(this, c.x + 14, c.y - 52, line, 12, '#111318').setOrigin(0, 1).setDepth(960)
       .setBackgroundColor('#f5f0e1').setPadding(6, 4, 6, 4).setWordWrapWidth(220).setAlign('center');
     this.bubbles.set(unitId, b);
     this.tweens.add({ targets: b, alpha: 0, delay: ms, duration: 300, onComplete: () => { b.destroy(); if (this.bubbles.get(unitId) === b) this.bubbles.delete(unitId); } });
