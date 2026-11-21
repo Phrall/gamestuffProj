@@ -1,0 +1,674 @@
+{
+  "version": "0.3",
+  "locale": "en",
+  "dataVersion": "1.7",
+  "_notes": "Placeholders in {braces} are filled by code. Reaction 'held' is Bulwark only. Barks: pick one at random per event; 'shaken' plays once when squad morale enters Shaken.",
+  "_params": {
+    "vows.<vow>": {
+      "goal": "vows.<vow>.goal",
+      "breakRadius": "vows.bulwark.breakRadius",
+      "guardRadius": "vows.bulwark.guardRadius",
+      "resolve": "vows.<vow>.kept.resolve",
+      "shadow": "vows.<vow>.broken.shadow",
+      "oathClass": "vows.<vow>.oathClass",
+      "shadowClass": "vows.<vow>.shadowClass",
+      "morale": "rules.morale.events.vowFulfilled",
+      "moraleBroken": "rules.morale.events.vowBroken (signed, e.g. -15)",
+      "surgeAtk": "vows.<vow>.broken.surge.atk",
+      "surgeMove": "vows.bulwark.broken.surge.move",
+      "surgeHit": "vows.loneBlade.broken.surge.hit",
+      "atkWhenAlone": "vows.loneBlade.whileSworn.atkWhenAlone",
+      "n": "current progress"
+    },
+    "abilities.<id>": {
+      "range": "abilities.<id>.range as 'min-max', or one number if equal",
+      "rangeMax": "abilities.<id>.range[1]",
+      "cd": "abilities.<id>.cd",
+      "def/res/move/jump/hitBonus/push/blockedBonus/fallMinDrop/morale": "the same-named field on the ability, its buff or its debuff (move as a signed number in thornsnare, unsigned in pinningArrow)",
+      "heal": "rules.heal.base + floor(caster Mag / rules.heal.magDivisor)"
+    },
+    "morale.<tier>": {
+      "hit": "rules.morale.tiers[].hit (signed)",
+      "move": "rules.morale.tiers[].move (signed)",
+      "dmgPct": "rules.morale.tiers[].dmg x 100"
+    },
+    "reckoning": {
+      "value/max/className/tier/change": "filled by the Reckoning screen"
+    }
+  },
+  "speakers": {
+    "narrator": "",
+    "maren": "Maren",
+    "tobin": "Tobin",
+    "wren": "Wren",
+    "calla": "Calla",
+    "captain": "Court Captain",
+    "binder": "Oath-Binder"
+  },
+  "scenes": {
+    "millFord.pre": [
+      {
+        "id": "A1_B01_PRE_001",
+        "speaker": "narrator",
+        "text": "Mill Ford, at dawn. Two flour carts from Ashford wait at the water's edge."
+      },
+      {
+        "id": "A1_B01_PRE_002",
+        "speaker": "tobin",
+        "text": "That's a lot of grey cloaks for two carts of flour."
+      },
+      {
+        "id": "A1_B01_PRE_003",
+        "speaker": "maren",
+        "text": "Six. Spears, a bow, a mage, and someone who likes giving orders."
+      },
+      {
+        "id": "A1_B01_PRE_004",
+        "speaker": "captain",
+        "text": "Carters of Ashford! By your debt oath, turn those carts around."
+      },
+      {
+        "id": "A1_B01_PRE_005",
+        "speaker": "narrator",
+        "text": "Gold light rings the carters' wrists. Slowly, stiffly, they begin to turn."
+      },
+      {
+        "id": "A1_B01_PRE_006",
+        "speaker": "calla",
+        "text": "They're compelling them. They didn't even ask."
+      },
+      {
+        "id": "A1_B01_PRE_007",
+        "speaker": "binder",
+        "text": "Captain. Three of them aren't in the Ledger. Nothing to hold. The healer is a sworn Sister."
+      },
+      {
+        "id": "A1_B01_PRE_008",
+        "speaker": "captain",
+        "text": "Unsworn, then. No one will miss them. Take the carts."
+      },
+      {
+        "id": "A1_B01_PRE_009",
+        "speaker": "calla",
+        "text": "I'd miss them. Just so you know."
+      },
+      {
+        "id": "A1_B01_PRE_010",
+        "speaker": "maren",
+        "text": "We were paid to get those carts to market. That's the one thing I'm sure of today."
+      },
+      {
+        "id": "A1_B01_PRE_011",
+        "speaker": "wren",
+        "text": "Cliff on the right. Their archer goes up there."
+      },
+      {
+        "id": "A1_B01_PRE_012",
+        "speaker": "tobin",
+        "text": "So we just fight the Oathcourt? The actual Oathcourt?"
+      },
+      {
+        "id": "A1_B01_PRE_013",
+        "speaker": "maren",
+        "text": "Swear a vow if you want one. On the field it isn't a promise. It's a plan with teeth."
+      },
+      {
+        "id": "A1_B01_PRE_014",
+        "speaker": "tobin",
+        "text": "Right. Teeth. Good. Anyway."
+      }
+    ],
+    "millFord.post.win": [
+      {
+        "id": "A1_B01_WIN_001",
+        "speaker": "narrator",
+        "text": "The last grey cloak goes down in the shallows. The gold light fades from the carters' wrists."
+      },
+      {
+        "id": "A1_B01_WIN_002",
+        "speaker": "calla",
+        "text": "Breathe. It's gone for now. You're all right."
+      },
+      {
+        "id": "A1_B01_WIN_003",
+        "speaker": "tobin",
+        "text": "We beat them. Maren, we actually beat the Oathcourt."
+      },
+      {
+        "id": "A1_B01_WIN_004",
+        "speaker": "maren",
+        "text": "We beat six of them. There are a lot more than six."
+      },
+      {
+        "id": "A1_B01_WIN_005",
+        "speaker": "wren",
+        "text": "Their binder wrote something down. Before."
+      },
+      {
+        "id": "A1_B01_WIN_006",
+        "speaker": "maren",
+        "text": "Then get the carts moving. We're over the ford before anyone reads it."
+      },
+      {
+        "id": "A1_B01_WIN_007",
+        "speaker": "calla",
+        "text": "Someone always reads it."
+      },
+      {
+        "id": "A1_B01_WIN_008",
+        "speaker": "narrator",
+        "text": "Far to the north, in Highmere, a man in an iron mask is handed a report. He reads it twice."
+      }
+    ],
+    "millFord.post.loss": [
+      {
+        "id": "A1_B01_LOSS_001",
+        "speaker": "maren",
+        "text": "Fall back! Over the hill, now!"
+      },
+      {
+        "id": "A1_B01_LOSS_002",
+        "speaker": "captain",
+        "text": "Run, then. You can't break an oath you never made. You can still bleed."
+      },
+      {
+        "id": "A1_B01_LOSS_003",
+        "speaker": "narrator",
+        "text": "The carts roll back toward Ashford, the carters walking beside them like sleepers."
+      },
+      {
+        "id": "A1_B01_LOSS_004",
+        "speaker": "tobin",
+        "text": "We left them. We just left them there."
+      },
+      {
+        "id": "A1_B01_LOSS_005",
+        "speaker": "maren",
+        "text": "We're alive to try again. That's all today gets."
+      },
+      {
+        "id": "A1_B01_LOSS_006",
+        "speaker": "calla",
+        "text": "Then let's try again before they reach the mill."
+      }
+    ]
+  },
+  "vows": {
+    "bulwark": {
+      "oath": {
+        "maren": "No blade passes me to them.",
+        "tobin": "Nobody gets past me. Nobody. I mean it.",
+        "wren": "Stay behind me. Nothing reaches you.",
+        "calla": "No blade passes me to them. Not today."
+      },
+      "reaction": {
+        "maren": {
+          "held": "One stopped. Now hold.",
+          "kept": "Everyone stood up at the end. Good.",
+          "broken": "Not again. Get them up!",
+          "lapsed": "Nobody came at me. I'll take it."
+        },
+        "tobin": {
+          "held": "I blocked it! Did everyone see that?",
+          "kept": "Everyone's still standing. Reckon that's partly me.",
+          "broken": "I was right there. I was right there.",
+          "lapsed": "Nobody even swung at me. Is that good?"
+        },
+        "wren": {
+          "held": "Got it.",
+          "kept": "No one fell. Good.",
+          "broken": "Too slow.",
+          "lapsed": "Quiet day."
+        },
+        "calla": {
+          "held": "That one was meant for you. You're welcome.",
+          "kept": "Everyone's whole. That's enough for me.",
+          "broken": "I'm sorry. I'm so sorry. Get up.",
+          "lapsed": "No one needed shielding. I'll count that a mercy."
+        }
+      }
+    },
+    "loneBlade": {
+      "oath": {
+        "maren": "I go in alone, and I come out.",
+        "tobin": "I go in alone, and I come out. Both parts, please.",
+        "wren": "Alone. Like always.",
+        "calla": "I'll go in alone. Don't follow me."
+      },
+      "reaction": {
+        "maren": {
+          "kept": "Done. Back in line.",
+          "broken": "Should've cleared them off first. Noted.",
+          "lapsed": "Never got my opening."
+        },
+        "tobin": {
+          "kept": "I went in alone and I came out. It held me up.",
+          "broken": "It cracked. Like ice. I felt it go.",
+          "lapsed": "Never got one on my own. Next time."
+        },
+        "wren": {
+          "kept": "Alone suits me.",
+          "broken": "Crowded. Should've waited.",
+          "lapsed": "No clean shot."
+        },
+        "calla": {
+          "kept": "I went alone and came back. Don't make a habit of letting me.",
+          "broken": "That wasn't mine to take. Not like that.",
+          "lapsed": "I couldn't find the space. Just as well."
+        }
+      }
+    }
+  },
+  "barks": {
+    "maren": {
+      "attack": [
+        "Move.",
+        "On me.",
+        "Here's your opening."
+      ],
+      "hit": [
+        "That all?",
+        "Hells.",
+        "Still here."
+      ],
+      "downed": [
+        "Hold the line...",
+        "Not like this.",
+        "Keep going..."
+      ],
+      "revived": [
+        "Back. Thanks.",
+        "I owe you.",
+        "Where were we?"
+      ],
+      "kill": [
+        "Next.",
+        "One down.",
+        "Stay down."
+      ],
+      "shaken": [
+        "Steady. Breathe.",
+        "We've had worse days.",
+        "Don't break now."
+      ]
+    },
+    "tobin": {
+      "attack": [
+        "Here goes!",
+        "Sorry! Not sorry!",
+        "Like Maren showed me..."
+      ],
+      "hit": [
+        "Ow! Ow. Fine.",
+        "That's going to bruise.",
+        "Hey!"
+      ],
+      "downed": [
+        "Is this bad? This is bad.",
+        "Tell my dad...",
+        "I'm fine. I'm not fine."
+      ],
+      "revived": [
+        "I'm up! I'm up!",
+        "Did I miss anything?",
+        "Thanks. Really."
+      ],
+      "kill": [
+        "I did that. Me!",
+        "Oh. Oh, he's down.",
+        "Reckon that's one."
+      ],
+      "shaken": [
+        "This is going proper wrong.",
+        "Maren? Maren!",
+        "I want to go home."
+      ]
+    },
+    "wren": {
+      "attack": [
+        "Loosing.",
+        "Hold still.",
+        "Easy shot."
+      ],
+      "hit": [
+        "Hm.",
+        "Grazed.",
+        "Noted."
+      ],
+      "downed": [
+        "Should've climbed higher.",
+        "Cold...",
+        "Leave me."
+      ],
+      "revived": [
+        "Back.",
+        "Thanks.",
+        "Again, then."
+      ],
+      "kill": [
+        "Down.",
+        "Clean.",
+        "That's one."
+      ],
+      "shaken": [
+        "Bad wind today.",
+        "Heads low.",
+        "This is turning."
+      ]
+    },
+    "calla": {
+      "attack": [
+        "Forgive me.",
+        "Sit down.",
+        "Gently, now."
+      ],
+      "hit": [
+        "Rude.",
+        "I felt that.",
+        "Careful with the healer."
+      ],
+      "downed": [
+        "Who heals the healer...",
+        "Not yet...",
+        "Tobin... the satchel..."
+      ],
+      "revived": [
+        "Thank you. Truly.",
+        "Back on my feet.",
+        "Let's not do that again."
+      ],
+      "kill": [
+        "Rest now.",
+        "I didn't want that.",
+        "Go quietly."
+      ],
+      "shaken": [
+        "Breathe with me. In. Out.",
+        "Stay close. All of you.",
+        "We're not done yet."
+      ]
+    }
+  },
+  "ui": {
+    "deploy": {
+      "title": "Deploy and swear",
+      "subtitle": "Place your units, then choose a vow for each. Vows are optional.",
+      "swear": "Swear vow",
+      "noVow": "No vow",
+      "noVowNote": "Fights unsworn: no Resolve, no Shadow.",
+      "begin": "Begin battle",
+      "ifKept": "If kept",
+      "ifBroken": "If broken",
+      "whileSworn": "While sworn"
+    },
+    "vows": {
+      "bulwark": {
+        "name": "Bulwark",
+        "summary": "Guard an ally from {goal} attack, and let no ally within {breakRadius} tiles fall.",
+        "whileSworn": "Guard: you take single-target attacks aimed at allies within {guardRadius} tiles.",
+        "kept": "At battle end: +{resolve} Resolve toward {oathClass}, +{morale} morale.",
+        "breaks": "Breaks if an ally within {breakRadius} tiles falls, even after the guard.",
+        "broken": "Surge: +{surgeAtk} Atk, +{surgeMove} Move, Guard ends. +{shadow} Shadow toward {shadowClass}, {moraleBroken} morale.",
+        "progress": "{n}/{goal} guarded"
+      },
+      "loneBlade": {
+        "name": "Lone Blade",
+        "summary": "Defeat {goal} foe with no ally beside you.",
+        "whileSworn": "+{atkWhenAlone} Atk while no ally is beside you. Downed allies don't count.",
+        "kept": "As soon as it's done: +{resolve} Resolve toward {oathClass}, +{morale} morale.",
+        "breaks": "Breaks if you defeat a foe while a standing ally is beside you.",
+        "broken": "Surge: +{surgeAtk} Atk, +{surgeHit} hit. +{shadow} Shadow toward {shadowClass}, {moraleBroken} morale.",
+        "progress": "{n}/{goal} alone"
+      }
+    },
+    "sigil": {
+      "intact": {
+        "label": "Intact",
+        "tooltip": "Sworn. {progress}."
+      },
+      "held": {
+        "label": "Held",
+        "tooltip": "{goal}/{goal}, hold until the end."
+      },
+      "kept": {
+        "label": "Kept",
+        "tooltip": "Vow kept."
+      },
+      "broken": {
+        "label": "Broken",
+        "tooltip": "Vow broken. The surge is yours for the rest of the battle."
+      },
+      "frozen": {
+        "label": "Frozen",
+        "tooltip": "Downed. The vow can't break while frozen and resolves at battle end."
+      },
+      "lapsed": {
+        "label": "Lapsed",
+        "tooltip": "No gain, no loss."
+      }
+    },
+    "abilities": {
+      "strike": {
+        "name": "Strike",
+        "shortName": "Strike",
+        "tooltip": "A basic sword blow. Range {range}."
+      },
+      "cleave": {
+        "name": "Cleave",
+        "shortName": "Cleave",
+        "tooltip": "Hits the target and the tiles on either side of it. Enemies only. Cooldown {cd}."
+      },
+      "shove": {
+        "name": "Shove",
+        "shortName": "Shove",
+        "tooltip": "Pushes the target back {push} tile. +{blockedBonus} damage if blocked or it falls {fallMinDrop}+ levels. Cooldown {cd}."
+      },
+      "brace": {
+        "name": "Brace",
+        "shortName": "Brace",
+        "tooltip": "+{def} Def until your next turn, and every attack on you counts as from the front. Cooldown {cd}."
+      },
+      "rallyCry": {
+        "name": "Rally Cry",
+        "shortName": "Rally Cry",
+        "tooltip": "+{morale} squad morale. Once per battle."
+      },
+      "shoot": {
+        "name": "Shoot",
+        "shortName": "Shoot",
+        "tooltip": "A basic arrow. Range {range}."
+      },
+      "aimedShot": {
+        "name": "Aimed Shot",
+        "shortName": "Aimed Shot",
+        "tooltip": "A slow, careful shot with +{hitBonus} hit. Range {range}. Cooldown {cd}."
+      },
+      "pinningArrow": {
+        "name": "Pinning Arrow",
+        "shortName": "Pinning",
+        "tooltip": "Light damage. The target loses {move} Move until the end of its next turn. Cooldown {cd}."
+      },
+      "volley": {
+        "name": "Volley",
+        "shortName": "Volley",
+        "tooltip": "Arrows on a plus-shaped area. Hits allies too. Range {range}. Cooldown {cd}."
+      },
+      "sureFooting": {
+        "name": "Sure Footing",
+        "shortName": "Footing",
+        "tooltip": "Passive. +{jump} Jump, and climbing costs no extra Move."
+      },
+      "spark": {
+        "name": "Spark",
+        "shortName": "Spark",
+        "tooltip": "A small bolt of magic. Always hits. Range {range}."
+      },
+      "mend": {
+        "name": "Mend",
+        "shortName": "Mend",
+        "tooltip": "Heals an ally for {heal} HP, or revives a downed ally. Range {range}. Cooldown {cd}."
+      },
+      "ward": {
+        "name": "Ward",
+        "shortName": "Ward",
+        "tooltip": "An ally gains +{def} Def and +{res} Res until your next turn starts. Range {range}. Cooldown {cd}."
+      },
+      "thornsnare": {
+        "name": "Thornsnare",
+        "shortName": "Thornsnare",
+        "tooltip": "Thorns on a plus-shaped area. Enemies only, {move} Move until their next turn ends. Cooldown {cd}."
+      },
+      "kindle": {
+        "name": "Kindle",
+        "shortName": "Kindle",
+        "tooltip": "A heavy spell on one target. Range {range}. Cooldown {cd}."
+      },
+      "thrust": {
+        "name": "Spear Thrust",
+        "shortName": "Thrust",
+        "tooltip": "Strikes up to {rangeMax} tiles away in a straight line."
+      },
+      "binderSpark": {
+        "name": "Seal Spark",
+        "shortName": "Seal Spark",
+        "tooltip": "A bolt of oath magic. Always hits. Range {range}."
+      },
+      "binderMend": {
+        "name": "Seal Mend",
+        "shortName": "Seal Mend",
+        "tooltip": "Heals an ally. Range {range}. Cooldown {cd}."
+      }
+    },
+    "units": {
+      "maren": {
+        "name": "Maren",
+        "shortName": "Maren"
+      },
+      "tobin": {
+        "name": "Tobin",
+        "shortName": "Tobin"
+      },
+      "wren": {
+        "name": "Wren",
+        "shortName": "Wren"
+      },
+      "calla": {
+        "name": "Calla",
+        "shortName": "Calla"
+      },
+      "captain": {
+        "name": "Court Captain",
+        "shortName": "Captain"
+      },
+      "spearA": {
+        "name": "Court Spearman",
+        "shortName": "Spear A"
+      },
+      "spearB": {
+        "name": "Court Spearman",
+        "shortName": "Spear B"
+      },
+      "archerA": {
+        "name": "Court Archer",
+        "shortName": "Archer A"
+      },
+      "binder": {
+        "name": "Oath-Binder",
+        "shortName": "Binder"
+      }
+    },
+    "fromTile": {
+      "targets": "From this tile · {n} targets",
+      "none": "No targets from here",
+      "cooling": "{ability} is cooling down (ready in {n}), so it's left out.",
+      "used": "{ability} was used this battle.",
+      "breaksLoneBlade": "Downing a foe here breaks Lone Blade (ally beside you)"
+    },
+    "camera": {
+      "rotateLeft": "Rotate left (Q)",
+      "rotateRight": "Rotate right (E)",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "center": "Center on unit (C)"
+    },
+    "preview": {
+      "breaksVowDetail": "{vow}: {ally} is beside you if this defeats the target.",
+      "hit": "Hit",
+      "damage": "Damage",
+      "hpAfter": "HP after",
+      "breaksVow": "Breaks vow",
+      "front": "Front",
+      "side": "Side",
+      "back": "Back",
+      "highGround": "High ground",
+      "lowGround": "Low ground"
+    },
+    "morale": {
+      "label": "Morale",
+      "shaken": {
+        "name": "Shaken",
+        "tooltip": "{hit} hit now, {move} Move from each unit's next turn."
+      },
+      "steady": {
+        "name": "Steady",
+        "tooltip": "No bonus or penalty."
+      },
+      "inspired": {
+        "name": "Inspired",
+        "tooltip": "+{hit} hit, +{dmgPct}% damage."
+      }
+    },
+    "timeline": {
+      "title": "Turn order",
+      "waitGhost": "If you wait",
+      "downed": "Downed. {n} turns left to revive.",
+      "lost": "Lost"
+    },
+    "banner": {
+      "victory": "Victory",
+      "defeat": "Defeat",
+      "vowKept": "Vow kept",
+      "vowBroken": "Vow broken"
+    },
+    "reckoning": {
+      "title": "Reckoning",
+      "subtitle": "What was sworn, and what came of it.",
+      "columns": {
+        "unit": "Unit",
+        "vow": "Vow",
+        "result": "Result",
+        "resolve": "Resolve",
+        "shadow": "Shadow",
+        "defeats": "Defeats"
+      },
+      "result": {
+        "kept": "Kept",
+        "broken": "Broken",
+        "lapsed": "Lapsed",
+        "none": "No vow"
+      },
+      "lapsedNote": "No gain, no loss",
+      "noneNote": "Fought unsworn",
+      "detail": {
+        "bulwark": {
+          "kept": "Guarded {n} attack · no ally within {breakRadius} tiles fell",
+          "broken": "An ally within {breakRadius} tiles fell",
+          "lapsed": "Battle ended at 0 / {goal} · no attack guarded"
+        },
+        "loneBlade": {
+          "kept": "Defeated {n} foe alone",
+          "broken": "Defeated a foe with an ally beside",
+          "lapsed": "Battle ended at 0 / {goal} · no solo defeat"
+        }
+      },
+      "classProgress": {
+        "resolve": "{value}/{max} Resolve toward {className}",
+        "shadow": "{value}/{max} Shadow toward {className}"
+      },
+      "morale": "Morale {value}, {tier}, {change}",
+      "continue": "Continue",
+      "retry": "Retry battle",
+      "title_screen": "Back to title"
+    }
+  }
+}
