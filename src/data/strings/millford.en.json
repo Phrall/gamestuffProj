@@ -1,8 +1,8 @@
 {
-  "version": "0.3",
+  "version": "0.5",
   "locale": "en",
   "dataVersion": "1.7",
-  "_notes": "Placeholders in {braces} are filled by code. Reaction 'held' is Bulwark only. Barks: pick one at random per event; 'shaken' plays once when squad morale enters Shaken.",
+  "_notes": "Placeholders in {braces} are filled by code. Reaction 'held' is Bulwark only. Reaction 'lost': on the Reckoning, use it instead of the vow-result quote for any sworn unit that ended the battle downed or lost. Scenes play unchanged when a unit is lost: lost means carried off wounded, not dead (permadeath is off), so they can still speak afterwards. Barks: pick one at random per event; 'shaken' plays once when squad morale enters Shaken.",
   "_params": {
     "vows.<vow>": {
       "goal": "vows.<vow>.goal",
@@ -33,7 +33,14 @@
       "dmgPct": "rules.morale.tiers[].dmg x 100"
     },
     "reckoning": {
-      "value/max/className/tier/change": "filled by the Reckoning screen"
+      "value/max/className/tier/change": "filled by the Reckoning screen",
+      "n": "final vow progress"
+    },
+    "names": {
+      "ability": "display name of the ability (ui.abilities.<id>.name)",
+      "ally": "the ally's display name (ui.units.<id>.name)",
+      "vow": "vow display name (ui.vows.<vow>.name)",
+      "progress": "the already-formatted ui.vows.<vow>.progress string"
     }
   },
   "speakers": {
@@ -206,25 +213,29 @@
           "held": "One stopped. Now hold.",
           "kept": "Everyone stood up at the end. Good.",
           "broken": "Not again. Get them up!",
-          "lapsed": "Nobody came at me. I'll take it."
+          "lapsed": "Nobody came at me. I'll take it.",
+          "lost": "I went down. Next time I stay up."
         },
         "tobin": {
           "held": "I blocked it! Did everyone see that?",
           "kept": "Everyone's still standing. Reckon that's partly me.",
           "broken": "I was right there. I was right there.",
-          "lapsed": "Nobody even swung at me. Is that good?"
+          "lapsed": "Nobody even swung at me. Is that good?",
+          "lost": "I'm all right. Mostly. Did I miss the end?"
         },
         "wren": {
           "held": "Got it.",
           "kept": "No one fell. Good.",
           "broken": "Too slow.",
-          "lapsed": "Quiet day."
+          "lapsed": "Quiet day.",
+          "lost": "Went down. Won't again."
         },
         "calla": {
           "held": "That one was meant for you. You're welcome.",
           "kept": "Everyone's whole. That's enough for me.",
           "broken": "I'm sorry. I'm so sorry. Get up.",
-          "lapsed": "No one needed shielding. I'll count that a mercy."
+          "lapsed": "No one needed shielding. I'll count that a mercy.",
+          "lost": "Someone had to carry the healer. That stings."
         }
       }
     },
@@ -239,22 +250,26 @@
         "maren": {
           "kept": "Done. Back in line.",
           "broken": "Should've cleared them off first. Noted.",
-          "lapsed": "Never got my opening."
+          "lapsed": "Never got my opening.",
+          "lost": "I went down. Next time I stay up."
         },
         "tobin": {
           "kept": "I went in alone and I came out. It held me up.",
           "broken": "It cracked. Like ice. I felt it go.",
-          "lapsed": "Never got one on my own. Next time."
+          "lapsed": "Never got one on my own. Next time.",
+          "lost": "I'm all right. Mostly. Did I miss the end?"
         },
         "wren": {
           "kept": "Alone suits me.",
           "broken": "Crowded. Should've waited.",
-          "lapsed": "No clean shot."
+          "lapsed": "No clean shot.",
+          "lost": "Went down. Won't again."
         },
         "calla": {
           "kept": "I went alone and came back. Don't make a habit of letting me.",
           "broken": "That wasn't mine to take. Not like that.",
-          "lapsed": "I couldn't find the space. Just as well."
+          "lapsed": "I couldn't find the space. Just as well.",
+          "lost": "Someone had to carry the healer. That stings."
         }
       }
     }
@@ -605,6 +620,8 @@
     },
     "morale": {
       "label": "Morale",
+      "squad": "Squad",
+      "foe": "Foe",
       "shaken": {
         "name": "Shaken",
         "tooltip": "{hit} hit now, {move} Move from each unit's next turn."
@@ -617,6 +634,10 @@
         "name": "Inspired",
         "tooltip": "+{hit} hit, +{dmgPct}% damage."
       }
+    },
+    "turn": {
+      "wait": "Wait",
+      "endTurn": "End turn"
     },
     "timeline": {
       "title": "Turn order",
@@ -648,17 +669,22 @@
         "none": "No vow"
       },
       "lapsedNote": "No gain, no loss",
+      "status": {
+        "standing": "Standing",
+        "downed": "Downed",
+        "lost": "Lost"
+      },
       "noneNote": "Fought unsworn",
       "detail": {
         "bulwark": {
           "kept": "Guarded {n} attack · no ally within {breakRadius} tiles fell",
           "broken": "An ally within {breakRadius} tiles fell",
-          "lapsed": "Battle ended at 0 / {goal} · no attack guarded"
+          "lapsed": "Battle ended at {n} / {goal} · no attack guarded"
         },
         "loneBlade": {
           "kept": "Defeated {n} foe alone",
           "broken": "Defeated a foe with an ally beside",
-          "lapsed": "Battle ended at 0 / {goal} · no solo defeat"
+          "lapsed": "Battle ended at {n} / {goal} · no solo defeat"
         }
       },
       "classProgress": {

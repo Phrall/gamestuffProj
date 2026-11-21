@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import type { BattleState } from '../core/battle';
-import { reckonVows, vowDef } from '../core/vows';
-import { VOWS } from '../data';
+import { teamMorale } from '../core/stats';
+import { reckonVows } from '../core/vows';
+import { lookup, scene, t, vowName, vowParams } from '../data/strings';
+import { playDialogue } from './dialogue';
 import { FONT } from './theme';
 
-// Minimal end screen. The full Reckoning (vow results, Resolve, Shadow) is issue #10.
+// End screen: banner, Reckoning table (text from Writing's strings), then the post-battle scene.
+// The fully styled Reckoning is issue #10.
 export default class ResultsScene extends Phaser.Scene {
   constructor() { super('Results'); }
 
@@ -12,28 +15,37 @@ export default class ResultsScene extends Phaser.Scene {
     const s = data.state;
     const { width } = this.scale;
     const won = s.winner === 'player';
-    this.add.text(width / 2, 90, won ? 'VICTORY' : 'DEFEAT', { fontFamily: FONT, fontSize: '56px', color: won ? '#f5c451' : '#f87171' }).setOrigin(0.5);
-    this.add.text(width / 2, 150, `Mill Ford · ${s.turnNumber} turns · seed ${s.seed}`, { fontFamily: FONT, fontSize: '16px', color: '#9ca3af' }).setOrigin(0.5);
+    this.add.text(width / 2, 70, (won ? t('ui.banner.victory') : t('ui.banner.defeat')).toUpperCase(), { fontFamily: FONT, fontSize: '52px', color: won ? '#f5c451' : '#f87171' }).setOrigin(0.5);
+    this.add.text(width / 2, 122, `${t('ui.reckoning.title')} · ${t('ui.reckoning.subtitle')}`, { fontFamily: FONT, fontSize: '16px', color: '#e5e7eb' }).setOrigin(0.5);
+    this.add.text(width / 2, 146, `Mill Ford · ${s.turnNumber} turns · seed ${s.seed}`, { fontFamily: FONT, fontSize: '13px', color: '#9ca3af' }).setOrigin(0.5);
 
     const vows = new Map(reckonVows(s).map((v) => [v.unitId, v]));
-    const label = { fulfilled: 'Kept', broken: 'Broken', lapsed: 'Lapsed', intact: 'Intact' } as const;
-    const rows = s.units.filter((u) => u.team === 'player').map((u) => {
+    const key = { fulfilled: 'kept', broken: 'broken', lapsed: 'lapsed', intact: 'lapsed' } as const;
+    const rows: string[] = [];
+    for (const u of s.units.filter((x) => x.team === 'player')) {
       const v = vows.get(u.id);
-      const vow = v ? `${vowDef(v.vowId).name} ${label[v.status]}${v.resolve ? ` +${v.resolve} Resolve` : ''}${v.shadow ? ` +${v.shadow} Shadow` : ''}` : 'no vow';
-      const line = `${u.name.padEnd(7)} ${u.status.padEnd(7)} defeats ${u.defeats}  XP ${String(u.xp).padStart(3)}   ${vow}`;
-      // Bulwark wording from UX vow-sigils.md.
-      const goal = v ? vowDef(v.vowId).goal : 0;
-      const detail = v?.vowId !== 'bulwark' ? '' : v.status === 'fulfilled'
-        ? `Guarded ${goal} attack${goal > 1 ? 's' : ''} · no ally within ${VOWS.bulwark.breakRadius} tiles fell`
-        : v.status === 'lapsed' ? `Battle ended at ${s.vows[u.id]!.progress} / ${goal} · no attack guarded` : '';
-      return detail ? `${line}\n${''.padEnd(9)}${detail}` : line;
-    });
-    rows.push('', `Squad morale ${s.morale.player}`);
-    this.add.text(width / 2, 300, rows.join('\n'), { fontFamily: FONT, fontSize: '18px', color: '#e5e7eb', lineSpacing: 8 }).setOrigin(0.5);
+      const head = `${u.name.padEnd(7)} ${t(`ui.reckoning.status.${u.status === 'ok' ? 'standing' : u.status}`).padEnd(9)} ${t('ui.reckoning.columns.defeats')} ${u.defeats}   `;
+      if (!v) { rows.push(`${head}${t('ui.reckoning.result.none')} · ${t('ui.reckoning.noneNote')}`); continue; }
+      const k = key[v.status];
+      const gains = [v.resolve ? `+${v.resolve} ${t('ui.reckoning.columns.resolve')}` : '', v.shadow ? `+${v.shadow} ${t('ui.reckoning.columns.shadow')}` : '', k === 'lapsed' ? t('ui.reckoning.lapsedNote') : ''].filter(Boolean).join(' · ');
+      rows.push(`${head}${vowName(v.vowId)} ${t(`ui.reckoning.result.${k}`)}${gains ? ` · ${gains}` : ''}`);
+      rows.push(`${''.padEnd(9)}${t(`ui.reckoning.detail.${v.vowId}.${k}`, vowParams(v.vowId, s.vows[u.id]!.progress))}`);
+      // End-of-battle reaction (Bulwark's Kept and every Lapsed land here).
+      // Writing's rule: a sworn unit that ended downed or lost says its 'lost' line instead.
+      const line = lookup(`vows.${v.vowId}.reaction.${u.id}.${u.status === 'ok' ? k : 'lost'}`);
+      if (typeof line === 'string') rows.push(`${''.padEnd(9)}"${line}"`);
+    }
+    const tier = teamMorale(s, 'player').name.toLowerCase();
+    const change = s.morale.player - 50;
+    rows.push('', t('ui.reckoning.morale', { value: s.morale.player, tier: t(`ui.morale.${tier}.name`), change: change >= 0 ? `+${change}` : String(change) }));
+    this.add.text(width / 2, 170, rows.join('\n'), { fontFamily: FONT, fontSize: '16px', color: '#e5e7eb', lineSpacing: 6 }).setOrigin(0.5, 0);
 
-    this.add.text(width / 2, 560, 'Click or press SPACE to fight again', { fontFamily: FONT, fontSize: '18px', color: '#9ca3af' }).setOrigin(0.5);
     const again = () => this.scene.start('Battle');
-    this.input.keyboard?.once('keydown-SPACE', again);
-    this.time.delayedCall(400, () => this.input.once('pointerdown', again));
+    const prompt = () => {
+      this.add.text(width / 2, 640, `${t('ui.reckoning.retry')}: click or press SPACE`, { fontFamily: FONT, fontSize: '18px', color: '#9ca3af' }).setOrigin(0.5);
+      this.input.keyboard?.once('keydown-SPACE', again);
+      this.time.delayedCall(400, () => this.input.once('pointerdown', again));
+    };
+    this.time.delayedCall(300, () => playDialogue(this, scene(won ? 'millFord.post.win' : 'millFord.post.loss'), () => this.time.delayedCall(0, prompt)));
   }
 }
