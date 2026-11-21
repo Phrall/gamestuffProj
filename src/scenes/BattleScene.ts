@@ -383,7 +383,7 @@ export default class BattleScene extends Phaser.Scene {
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
-      b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? 'End turn' : 'Wait') : abilityShort(b.id)}${suffix}`);
+      b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
       b.label.setColor(enabled ? COLORS.text : '#4b5563');
       b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
@@ -431,7 +431,7 @@ export default class BattleScene extends Phaser.Scene {
     const p = this.state.morale.player;
     const e = this.state.morale.enemy;
     const tier = (team: 'player' | 'enemy') => t(`ui.morale.${teamMorale(this.state, team).name.toLowerCase()}.name`);
-    this.moraleText.setText(`Squad ${t('ui.morale.label').toLowerCase()} ${p} ${tier('player')}\nFoe ${t('ui.morale.label').toLowerCase()}   ${e} ${tier('enemy')}`);
+    this.moraleText.setText(`${t('ui.morale.squad')} ${t('ui.morale.label').toLowerCase()} ${p} ${tier('player')}\n${t('ui.morale.foe').padEnd(t('ui.morale.squad').length)} ${t('ui.morale.label').toLowerCase()} ${e} ${tier('enemy')}`);
     // Bark once when squad morale enters Shaken.
     const shaken = teamMorale(this.state, 'player').name === 'Shaken';
     if (shaken && !this.wasShaken) {
@@ -1193,7 +1193,7 @@ export default class BattleScene extends Phaser.Scene {
       case 'downed': return `${n(e.unitId)} is down!`;
       case 'revived': return `${n(e.unitId)} is back up`;
       case 'lost': return `${n(e.unitId)} is lost`;
-      case 'morale': return `${e.team === 'player' ? 'Squad' : 'Foe'} morale ${e.delta > 0 ? '+' : ''}${e.delta} (${e.reason})`;
+      case 'morale': return `${t(e.team === 'player' ? 'ui.morale.squad' : 'ui.morale.foe')} morale ${e.delta > 0 ? '+' : ''}${e.delta} (${e.reason})`;
       case 'vowSworn': return `${n(e.unitId)} swears ${vowDef(e.vowId).name}`;
       case 'vowProgress': return `${n(e.unitId)}'s vow: ${e.progress}/${e.goal}`;
       case 'vowFulfilled': return `${n(e.unitId)} keeps ${vowDef(e.vowId).name}!`;

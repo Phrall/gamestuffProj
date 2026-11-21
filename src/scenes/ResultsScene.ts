@@ -24,14 +24,15 @@ export default class ResultsScene extends Phaser.Scene {
     const rows: string[] = [];
     for (const u of s.units.filter((x) => x.team === 'player')) {
       const v = vows.get(u.id);
-      const head = `${u.name.padEnd(7)} ${u.status.padEnd(7)} ${t('ui.reckoning.columns.defeats')} ${u.defeats}   `;
+      const head = `${u.name.padEnd(7)} ${t(`ui.reckoning.status.${u.status === 'ok' ? 'standing' : u.status}`).padEnd(9)} ${t('ui.reckoning.columns.defeats')} ${u.defeats}   `;
       if (!v) { rows.push(`${head}${t('ui.reckoning.result.none')} · ${t('ui.reckoning.noneNote')}`); continue; }
       const k = key[v.status];
       const gains = [v.resolve ? `+${v.resolve} ${t('ui.reckoning.columns.resolve')}` : '', v.shadow ? `+${v.shadow} ${t('ui.reckoning.columns.shadow')}` : '', k === 'lapsed' ? t('ui.reckoning.lapsedNote') : ''].filter(Boolean).join(' · ');
       rows.push(`${head}${vowName(v.vowId)} ${t(`ui.reckoning.result.${k}`)}${gains ? ` · ${gains}` : ''}`);
       rows.push(`${''.padEnd(9)}${t(`ui.reckoning.detail.${v.vowId}.${k}`, vowParams(v.vowId, s.vows[u.id]!.progress))}`);
       // End-of-battle reaction (Bulwark's Kept and every Lapsed land here).
-      const line = lookup(`vows.${v.vowId}.reaction.${u.id}.${k}`);
+      // Writing's rule: a sworn unit that ended downed or lost says its 'lost' line instead.
+      const line = lookup(`vows.${v.vowId}.reaction.${u.id}.${u.status === 'ok' ? k : 'lost'}`);
       if (typeof line === 'string') rows.push(`${''.padEnd(9)}"${line}"`);
     }
     const tier = teamMorale(s, 'player').name.toLowerCase();
