@@ -29,6 +29,16 @@ describe('pathfinding (§3)', () => {
     expect(c.has('3,0')).toBe(false);
   });
 
+  it('anyone can pass a downed unit but not end on it (§8, #20)', () => {
+    const s = battle(flatRows(4, 1), [unit('a', 'player', 'sellsword', 0, 0), unit('b', 'player', 'sellsword', 1, 0), unit('e', 'enemy', 'sellsword', 3, 0)]);
+    s.units.find((u) => u.id === 'b')!.status = 'downed';
+    expect(costs(s, 'a').has('1,0')).toBe(false);
+    expect(costs(s, 'a').get('2,0')).toBe(2);
+    // The enemy walks over the downed player too.
+    expect(costs(s, 'e').get('0,0')).toBeUndefined(); // a stands there
+    expect(pathTree(s, s.units.find((u) => u.id === 'e')!).has('1,0')).toBe(true);
+  });
+
   it('passes through allies but not enemies, and never ends on a unit', () => {
     const s = battle(flatRows(5, 1), [unit('a', 'player', 'sellsword', 0, 0), unit('b', 'player', 'sellsword', 1, 0), unit('e', 'enemy', 'sellsword', 3, 0)]);
     const c = costs(s, 'a');

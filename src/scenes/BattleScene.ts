@@ -184,7 +184,14 @@ export default class BattleScene extends Phaser.Scene {
   private drawUnit(u: Unit): void {
     const v = this.views.get(u.id);
     if (!v) return;
-    v.root.setVisible(u.status !== 'lost');
+    if (u.status === 'lost') {
+      // Death animation (#20): sink and fade out, then leave the board.
+      if (v.root.visible && !this.tweens.isTweening(v.root)) {
+        this.tweens.add({ targets: v.root, alpha: 0, y: v.root.y + 10, duration: 500, delay: 250, onComplete: () => v.root.setVisible(false) });
+      }
+      return;
+    }
+    v.root.setVisible(true).setAlpha(1);
     const color = u.status === 'downed' ? COLORS.downed : u.team === 'player' ? COLORS.player : COLORS.enemy;
     const active = this.state.activeId === u.id;
     const lit = this.hoverUnitId === u.id;
