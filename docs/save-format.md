@@ -22,8 +22,10 @@ Writing a slot is atomic. The game builds and validates the new save in memory, 
 ## Where saves live
 
 - **localStorage**, one key per slot: `oathbound.save.auto`, `oathbound.save.1` … `oathbound.save.3`. A whole save is a few KB, so IndexedDB isn't needed.
+- Every key the game uses starts with `oathbound.` (saves, the temp write key `oathbound.save.tmp`, and the volume key `oathbound.volume`). GitHub Pages shares one localStorage across every repo under `phrall.github.io`, so the game never reads, lists or clears keys outside that prefix.
+- The origin's quota is about 5 MB in total. A write that hits the quota throws; the game catches it, keeps the old save, removes the temp key, and shows "Couldn't save: browser storage is full". This gets a test.
 - The load screen warns that saves are tied to this browser.
-- **Export** downloads a slot as `oathbound-<slot>-<date>.json`, the same JSON as stored. **Import** reads such a file into a slot the player picks. It runs the same validation and migration as loading, and an occupied slot confirms first.
+- **Export** downloads a slot as `oathbound-<slot>-<date>.json`, the same JSON as stored. **Import** reads such a file into a slot the player picks (1–3, never `auto`). It runs the same validation and migration as loading first, then uses the same overwrite confirm as saving when the slot is occupied.
 
 ## Shape (format version 1)
 
@@ -81,10 +83,30 @@ Every load (slot or import) is validated after migration, before any game state 
 | A class in `classId`/`secondary` that isn't in `unlocked` | refused |
 | Missing required field, wrong type | refused, naming the field |
 | `NaN`, `Infinity`, negative or non-integer where an integer ≥ 0 is expected (level, xp, resolve, shadow, morale, counts) | refused |
-| Number out of range (level 1–20, morale 0–100) | refused |
+| Number outside its range (table below) | refused |
 | Raw JSON over **256 KB**, or any string field over 200 chars | refused before parsing the rest |
 | Invalid JSON | refused: "Damaged save" |
 | Extra unknown fields | ignored, and dropped on the next save |
+
+### Field ranges (v1)
+
+All numbers are integers. A value on the edge loads; one past it is refused. So 99 Resolve loads and level 999 is refused.
+
+| Field | Min | Max |
+|---|---|---|
+| `version` | 1 | current game version |
+| `units[].level` | 1 | 20 |
+| `units[].xp` | 0 | 99 (resets at each level) |
+| `units[].resolve.<vow>`, `units[].shadow.<vow>` | 0 | 99 |
+| `morale` | 0 | 100 |
+| `campaign.seed`, `campaign.rngState` | 0 | 4294967295 (uint32) |
+| `campaign.completed[].turns` | 1 | 999 |
+| `inventory.<item>` | 0 | 99 |
+| `units` length | 1 | 12 |
+| `campaign.completed` length | 0 | 50 |
+| `talks.seen` length | 0 | 500 |
+| any string | 1 char | 200 chars |
+| whole file | | 256 KB |
 
 ## Determinism
 
