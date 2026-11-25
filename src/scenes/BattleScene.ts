@@ -34,6 +34,8 @@ interface UnitView {
   sigilText: Phaser.GameObjects.Text;
   /** Faint outline drawn above all terrain, so a unit behind high ground stays visible (UX §2). */
   outline: Phaser.GameObjects.Graphics;
+  /** Sigil layer above every unit, so a sigil and its leader line are never hidden by a token in front. */
+  sigilRoot: Phaser.GameObjects.Container;
 }
 
 // Captain is "Cp" so it never reads as Calla's "C" (QA #27).
@@ -246,9 +248,10 @@ export default class BattleScene extends Phaser.Scene {
     const hp = this.add.graphics();
     const sigil = this.add.graphics();
     const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
-    root.add([nub, body, glyph, hp, sigil, sigilText]);
+    root.add([nub, body, glyph, hp]);
     const outline = this.add.graphics().setDepth(898);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline };
+    const sigilRoot = this.add.container(0, 0, [sigil, sigilText]).setDepth(899);
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -258,6 +261,7 @@ export default class BattleScene extends Phaser.Scene {
     const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
     view.root.setPosition(c.x, c.y).setDepth(depthOf(this.iso, p.x, p.y) * 10 + 5);
     view.outline.setPosition(c.x, c.y);
+    view.sigilRoot.setPosition(c.x, c.y);
   }
 
   private drawUnit(u: Unit): void {
@@ -301,6 +305,9 @@ export default class BattleScene extends Phaser.Scene {
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, -46, 30 * frac, 5);
   }
 
+  /** Sigil boxes placed in the current refresh, in world space. */
+  private placedSigils: Phaser.Geom.Rectangle[] = [];
+
   private sigilSpot(u: Unit): Vec {
     const base = u.status === 'downed' ? -26 : -68;
     const candidates: Vec[] = [{ x: -14, y: base }, { x: 14, y: base }, { x: 0, y: base - 6 }, { x: -24, y: base + 6 }, { x: 24, y: base + 6 }, { x: -33, y: base + 12 }, { x: 33, y: base + 12 }, { x: 0, y: base - 26 }];
@@ -312,11 +319,14 @@ export default class BattleScene extends Phaser.Scene {
       // Token body plus HP bar (or the flat downed marker), relative to this unit.
       return o.status === 'downed' ? new Phaser.Geom.Rectangle(dx - 15, dy - 10, 30, 12) : new Phaser.Geom.Rectangle(dx - 15, dy - 47, 30, 47);
     });
-    const free = (p: Vec) => {
-      const box = new Phaser.Geom.Rectangle(p.x - 14, p.y - 14, 28, 36); // diamond plus pips
-      return !others.some((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, box));
-    };
-    return candidates.find(free) ?? candidates[0]!;
+    // Other units' placed sigils, moved into this unit's local space.
+    for (const q of this.placedSigils) others.push(new Phaser.Geom.Rectangle(q.x - me.x, q.y - me.y, q.width, q.height));
+    const box = (p: Vec) => new Phaser.Geom.Rectangle(p.x - 14, p.y - 14, 28, 36); // diamond plus pips
+    const free = (p: Vec) => !others.some((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, box(p)));
+    const spot = candidates.find(free) ?? candidates[0]!;
+    const b = box(spot);
+    this.placedSigils.push(new Phaser.Geom.Rectangle(b.x + me.x, b.y + me.y, b.width, b.height));
+    return spot;
   }
 
   /** Vow sigil (UX board 4): gold while intact or kept, cracked violet when broken, dim when frozen or lapsed. */
@@ -336,6 +346,11 @@ export default class BattleScene extends Phaser.Scene {
     const d = [{ x, y: y - 14 }, { x: x + 14, y }, { x, y: y + 14 }, { x: x - 14, y }];
     v.sigil.setAlpha(frozen ? 0.4 : 1);
     v.sigilText.setAlpha(frozen ? 0.4 : 1);
+    // Leader line to the owner's head, so a sigil that had to move aside still reads as this unit's.
+    if (u.status === 'ok' && (x !== 0 || y < -74)) {
+      v.sigil.lineStyle(3, 0x000000, 0.6).lineBetween(x, y + 14, 0, -47);
+      v.sigil.lineStyle(1.5, color, 0.95).lineBetween(x, y + 14, 0, -47);
+    }
     v.sigil.fillStyle(color, 1).fillPoints(d, true);
     if (frozen) v.sigil.fillStyle(0xe5e7eb, 1).fillRect(x + 12, y - 12, 2, 7).fillRect(x + 16, y - 12, 2, 7);
     if (held) {
@@ -560,6 +575,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private refreshUnits(): void {
+    this.placedSigils = []; // sigils placed this pass count as obstacles for the next (QA #33 follow-up)
     for (const u of this.state.units) this.drawUnit(u);
   }
 
@@ -1139,7 +1155,7 @@ export default class BattleScene extends Phaser.Scene {
     for (const p of path) {
       const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
       v.root.setDepth(Math.max(depthOf(this.iso, p.x, p.y), depthOf(this.iso, prev.x, prev.y)) * 10 + 5);
-      await new Promise<void>((r) => this.tweens.add({ targets: [v.root, v.outline], x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
+      await new Promise<void>((r) => this.tweens.add({ targets: [v.root, v.outline, v.sigilRoot], x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
       prev = p;
     }
     this.placeUnit(u, u.pos);
