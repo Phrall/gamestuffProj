@@ -48,6 +48,7 @@ export function playMusic(scene: Phaser.Scene, key: string): void {
 export function sting(scene: Phaser.Scene, key: string): void {
   const old = music;
   music = null; musicKey = null;
+  if (old) scene.tweens.killTweensOf(old); // a duck may still be running on it
   if (old) scene.tweens.add({ targets: old, volume: 0, duration: 300, onComplete: () => { old.stop(); old.destroy(); } });
   scene.time.delayedCall(old ? 300 : 0, () => { if (has(scene, key)) scene.sound.play(key, { volume: musicVol(key) }); });
 }
@@ -55,7 +56,7 @@ export function sting(scene: Phaser.Scene, key: string): void {
 /** Duck music ~6 dB for 2 s under the signature vow sounds. */
 function duck(scene: Phaser.Scene): void {
   const m = music as Phaser.Sound.WebAudioSound | null;
-  if (!m || !musicKey) return;
+  if (!m || !musicKey || m.pendingRemove || !m.isPlaying) return;
   const full = musicVol(musicKey);
   scene.tweens.killTweensOf(m);
   scene.tweens.add({ targets: m, volume: full * 0.5, duration: 120, yoyo: true, hold: 1800 });
