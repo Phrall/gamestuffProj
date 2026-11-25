@@ -36,13 +36,25 @@ interface UnitView {
   outline: Phaser.GameObjects.Graphics;
 }
 
-const ENEMY_GLYPH: Record<string, string> = { captain: 'C', spearA: 'P1', spearB: 'P2', archerA: 'A1', archerB: 'A2', binder: 'O' };
-/** Board token: player units by name initial (QA #15), enemies by role and number. */
-const glyphFor = (u: Unit): string => (u.team === 'player' ? u.name[0]! : ENEMY_GLYPH[u.id] ?? u.name[0]!);
+// Captain is "Cp" so it never reads as Calla's "C" (QA #27).
+const ENEMY_GLYPH: Record<string, string> = { captain: 'Cp', spearA: 'P1', spearB: 'P2', archerA: 'A1', archerB: 'A2', binder: 'O' };
+/** Enemy ids whose role appears more than once in this battle; only those get a number (QA #27). */
+let numbered = new Set<string>();
+const setNumbering = (units: Unit[]): void => {
+  const role = (id: string) => ENEMY_GLYPH[id]?.replace(/\d$/, '');
+  const ids = units.filter((u) => u.team === 'enemy').map((u) => u.id);
+  numbered = new Set(ids.filter((id) => /\d$/.test(ENEMY_GLYPH[id] ?? '') && ids.filter((o) => role(o) === role(id)).length > 1));
+};
+/** Board token: player units by name initial (QA #15), enemies by role, numbered only when duplicated. */
+const glyphFor = (u: Unit): string => {
+  if (u.team === 'player') return u.name[0]!;
+  const g = ENEMY_GLYPH[u.id] ?? u.name[0]!;
+  return numbered.has(u.id) ? g : g.replace(/\d$/, '');
+};
 /** Short name for timeline chips; numbered when two units share a name. */
 const shortName = (u: Unit): string => {
   const n = u.name.replace('Court ', '');
-  const tag = ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0];
+  const tag = numbered.has(u.id) ? ENEMY_GLYPH[u.id]?.match(/\d$/)?.[0] : undefined;
   return unitShort(u.id, tag ? `${n} ${tag}` : n);
 };
 
@@ -96,6 +108,7 @@ export default class BattleScene extends Phaser.Scene {
     const setup = millFordSetup();
     this.state = createBattle(setup, seed);
     for (const u of this.state.units) u.name = unitName(u.id, u.name);
+    setNumbering(this.state.units);
     // Barks use their own RNG so flavour never shifts combat rolls (replays stay identical).
     this.barkRand = mulberry32(seed ^ 0x5eed);
     this.lastBarkAt = {};
@@ -288,15 +301,32 @@ export default class BattleScene extends Phaser.Scene {
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, -46, 30 * frac, 5);
   }
 
+  private sigilSpot(u: Unit): Vec {
+    const base = u.status === 'downed' ? -26 : -68;
+    const candidates: Vec[] = [{ x: -14, y: base }, { x: 14, y: base }, { x: 0, y: base - 6 }, { x: -24, y: base + 6 }, { x: 24, y: base + 6 }, { x: -33, y: base + 12 }, { x: 33, y: base + 12 }, { x: 0, y: base - 26 }];
+    const me = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
+    const others = this.state.units.filter((o) => o.id !== u.id && o.status !== 'lost').map((o) => {
+      const c = tileCenter(this.iso, o.pos.x, o.pos.y, heightAt(this.state.map, o.pos));
+      const dx = c.x - me.x;
+      const dy = c.y - me.y;
+      // Token body plus HP bar (or the flat downed marker), relative to this unit.
+      return o.status === 'downed' ? new Phaser.Geom.Rectangle(dx - 15, dy - 10, 30, 12) : new Phaser.Geom.Rectangle(dx - 15, dy - 47, 30, 47);
+    });
+    const free = (p: Vec) => {
+      const box = new Phaser.Geom.Rectangle(p.x - 14, p.y - 14, 28, 36); // diamond plus pips
+      return !others.some((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, box));
+    };
+    return candidates.find(free) ?? candidates[0]!;
+  }
+
   /** Vow sigil (UX board 4): gold while intact or kept, cracked violet when broken, dim when frozen or lapsed. */
   private drawSigil(u: Unit, v: UnitView): void {
     v.sigil.clear();
     const vow = this.state.vows[u.id];
     if (!vow || u.status === 'lost') { v.sigilText.setText(''); return; }
-    // Sits up and to the left of the token: an iso neighbour is 32px right and 16px down,
-    // so adjacent sigils no longer overlap (QA #16).
-    const y = u.status === 'downed' ? -26 : -68;
-    const x = -14;
+    // Above the token, at the first spot that covers no other unit's token or HP bar (QA #16, #27).
+    // Offsets are in screen space, so this is re-checked at every rotation.
+    const { x, y } = this.sigilSpot(u);
     const dim = vow.status === 'lapsed';
     // v1.7 "Held": goal met but still breakable until battle end (UX sigil board).
     const held = vow.status === 'intact' && vow.progress >= vow.goal;
@@ -351,7 +381,9 @@ export default class BattleScene extends Phaser.Scene {
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
-    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   C: center   R: reset   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
+    // Key hints, split so each stays inside its own panel (QA #27).
+    text(this, 22, 702, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 412, 702, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
   }
 
   private rebuildButtons(): void {
@@ -564,17 +596,23 @@ export default class BattleScene extends Phaser.Scene {
         }
         // Move preview (#21): from a reachable tile, or the unit's own tile ("stay and attack").
         const h = this.hover;
-        if (h && (samePoint(h, u.pos) || (tree.has(key(h)) && !occupant(this.state, h)))) {
-          this.movePv = this.movePreviewAt(u, h);
-          paint(h, PV.bone, 0.75);
-          for (const t of this.movePv.threats) {
-            const e = getUnit(this.state, t.unitId);
-            const g = this.overlays[e.pos.y * this.state.map.width + e.pos.x];
-            const c = tileCenter(this.iso, e.pos.x, e.pos.y, heightAt(this.state.map, e.pos));
-            g?.lineStyle(3, PV.ring, 1).strokeEllipse(c.x, c.y, 44, 20);
-          }
+        if (h && (samePoint(h, u.pos) || (tree.has(key(h)) && !occupant(this.state, h)))) this.movePv = this.movePreviewAt(u, h);
+      } else if (this.mode.kind === 'move' && !this.state.acted) {
+        // After moving, keep showing who is in reach from where the unit now stands (QA #26).
+        this.movePv = this.movePreviewAt(u, u.pos);
+      }
+      if (this.movePv && this.mode.kind === 'move') {
+        const from = this.state.moved ? u.pos : this.hover!;
+        paint(from, PV.bone, this.state.moved ? 0.35 : 0.75);
+        for (const t of this.movePv.threats) {
+          const e = getUnit(this.state, t.unitId);
+          const g = this.overlays[e.pos.y * this.state.map.width + e.pos.x];
+          const c = tileCenter(this.iso, e.pos.x, e.pos.y, heightAt(this.state.map, e.pos));
+          g?.lineStyle(3, PV.ring, 1).strokeEllipse(c.x, c.y, 44, 20);
+          if (t.canDown) g?.lineStyle(1.5, PV.ring, 1).strokeEllipse(c.x, c.y, 54, 26); // could be downed from here
         }
-      } else if (this.mode.kind === 'target') {
+      }
+      if (this.mode.kind === 'target') {
         const a = ABILITIES[this.mode.abilityId]!;
         for (let y = 0; y < this.state.map.height; y++) {
           for (let x = 0; x < this.state.map.width; x++) {
@@ -624,37 +662,11 @@ export default class BattleScene extends Phaser.Scene {
     return mp;
   }
 
-  /** One chip per enemy in reach: ability codes in action-grid order (max 3, then +N), facing, skull. */
-  private chipText(t: Threat): string {
-    const codes = t.abilities.map((a) => (a.area ? `[${abilityCode(a.abilityId)}]` : abilityCode(a.abilityId)));
-    const shown = codes.length > 3 ? [...codes.slice(0, 3), `+${codes.length - 3}`] : codes;
-    return `${shown.join(' ')}  ${sideTag(t)}${t.canDown ? ' ☠' : ''}`;
-  }
-
+  /** Clears old move-preview chips. QA #25: chips covered enemy tokens, so the rings on the map
+   *  plus the From-this-tile panel carry the detail now. */
   private drawChips(): void {
     for (const o of this.chips) o.destroy();
     this.chips = [];
-    const mp = this.movePv;
-    if (!mp) return;
-    const placed: Phaser.Geom.Rectangle[] = [];
-    const lines = this.add.graphics().setDepth(949);
-    this.chips.push(lines);
-    for (const t of mp.threats) {
-      const e = getUnit(this.state, t.unitId);
-      const c = tileCenter(this.iso, e.pos.x, e.pos.y, heightAt(this.state.map, e.pos));
-      const chip = text(this, c.x, c.y - 52, this.chipText(t), 11, '#fde2dc').setOrigin(0.5, 1).setDepth(950)
-        .setBackgroundColor('#5a1f16').setPadding(4, 2, 4, 2);
-      // Never stack chips: slide along the same row, right first, then left.
-      let r = chip.getBounds();
-      for (let i = 1; placed.some((q) => Phaser.Geom.Intersects.RectangleToRectangle(q, r)) && i < 12; i++) {
-        const dx = (Math.ceil(i / 2) * (r.width + 4)) * (i % 2 ? 1 : -1);
-        chip.setX(c.x + dx);
-        r = chip.getBounds();
-      }
-      if (chip.x !== c.x) lines.lineStyle(1.5, PV.ring, 1).lineBetween(chip.x, r.bottom, c.x, c.y - 46);
-      placed.push(r);
-      this.chips.push(chip);
-    }
   }
 
   private movePreviewText(mp: MovePreview): string {
