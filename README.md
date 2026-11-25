@@ -37,6 +37,7 @@ The game opens at http://localhost:5173 and reloads as you edit.
 - **Wait / End turn:** `W`. Waiting without moving or acting brings your next turn sooner (the timeline shows where).
 - **Facing:** after acting, click a gold tile or use the arrow keys, then Enter.
 - `Esc` or right-click cancels. `D` toggles the debug overlay.
+- **Sound:** the button at the top left cycles volume (100%, 60%, 30%, off) and `M` mutes or unmutes. The level is remembered in the browser. Music starts on the first click, since browsers block audio until then. Sound hookup lives in `src/audio.ts`; files and volumes come from `assets/audio/audio_manifest.json`.
 - **Camera:** drag the board (left, right or middle button) or use the arrow keys to pan, mouse wheel or `+`/`-` to zoom (3 steps), `Q`/`E` to rotate 90°, `C` to center on the active unit, `R` to reset. The same controls sit in the cluster above the right-hand panel. The camera follows the acting unit when it is off-screen. Clicking a unit's chip in the turn order selects its tile, then a second click confirms a target.
 - Add `?seed=123` to the URL to replay a battle exactly.
 
