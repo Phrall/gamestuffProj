@@ -322,8 +322,12 @@ export default class BattleScene extends Phaser.Scene {
     // Other units' placed sigils, moved into this unit's local space.
     for (const q of this.placedSigils) others.push(new Phaser.Geom.Rectangle(q.x - me.x, q.y - me.y, q.width, q.height));
     const box = (p: Vec) => new Phaser.Geom.Rectangle(p.x - 14, p.y - 14, 28, 36); // diamond plus pips
-    const free = (p: Vec) => !others.some((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, box(p)));
-    const spot = candidates.find(free) ?? candidates[0]!;
+    const overlap = (p: Vec) => others.reduce((sum, r) => {
+      const i = Phaser.Geom.Rectangle.Intersection(r, box(p));
+      return sum + (i.width > 0 && i.height > 0 ? i.width * i.height : 0);
+    }, 0);
+    // First free spot; if none is free (4+ units packed round one tile), the one covering least.
+    const spot = candidates.find((p) => overlap(p) === 0) ?? candidates.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
     const b = box(spot);
     this.placedSigils.push(new Phaser.Geom.Rectangle(b.x + me.x, b.y + me.y, b.width, b.height));
     return spot;
@@ -348,8 +352,8 @@ export default class BattleScene extends Phaser.Scene {
     v.sigilText.setAlpha(frozen ? 0.4 : 1);
     // Leader line to the owner's head, so a sigil that had to move aside still reads as this unit's.
     if (u.status === 'ok' && (x !== 0 || y < -74)) {
-      v.sigil.lineStyle(3, 0x000000, 0.6).lineBetween(x, y + 14, 0, -47);
-      v.sigil.lineStyle(1.5, color, 0.95).lineBetween(x, y + 14, 0, -47);
+      v.sigil.lineStyle(4, 0x000000, 0.8).lineBetween(x, y + 14, 0, -47);
+      v.sigil.lineStyle(2, color, 1).lineBetween(x, y + 14, 0, -47);
     }
     v.sigil.fillStyle(color, 1).fillPoints(d, true);
     if (frozen) v.sigil.fillStyle(0xe5e7eb, 1).fillRect(x + 12, y - 12, 2, 7).fillRect(x + 16, y - 12, 2, 7);
