@@ -15,6 +15,7 @@ import { COLORS, FONT } from './theme';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
+import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
   | { kind: 'busy' }
@@ -118,8 +119,11 @@ export default class BattleScene extends Phaser.Scene {
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
     this.drawUi();
     this.drawCameraButtons();
+    this.drawVolumeButton();
     this.bindInput();
     this.exposeForQa();
+    initVolume(this);
+    playMusic(this, 'mus_camp_loop');
     this.showDeploy(seed);
   }
 
@@ -153,11 +157,13 @@ export default class BattleScene extends Phaser.Scene {
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
           this.vowChoice[u.id] = order[(order.indexOf(choice) + 1) % order.length]!;
+          sfx(this, this.vowChoice[u.id] ? 'vow_sworn' : 'ui_back');
           draw();
         });
       });
       const go = add(this.add.rectangle(540, 524, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
       add(text(this, 640, 544, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
+      buttonSounds(this, go);
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
@@ -168,6 +174,7 @@ export default class BattleScene extends Phaser.Scene {
       this.input.keyboard?.off('keydown-ENTER', begin);
       console.info('[oathbound] battle start', JSON.stringify({ seed, map: this.state.map.id, vows: this.vowChoice }));
       this.mode = { kind: 'busy' };
+      playMusic(this, 'mus_battle_loop');
       // Oath bubbles (Writing): each sworn unit speaks its oath, staggered.
       let delay = 0;
       for (const [id, vow] of Object.entries(this.vowChoice)) {
@@ -344,7 +351,7 @@ export default class BattleScene extends Phaser.Scene {
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
-    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   C: center   R: reset   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
+    text(this, 12, 700, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate   C: center   R: reset   Esc: cancel   1-6: actions   Tab/Enter: pick   W: wait   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000);
   }
 
   private rebuildButtons(): void {
@@ -361,6 +368,7 @@ export default class BattleScene extends Phaser.Scene {
       const y = 560 + row * 48;
       const bg = this.add.rectangle(x, y, 148, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
       const label = text(this, x + 10, y + 11, '', 14).setDepth(1001);
+      bg.on('pointerover', () => sfx(this, 'ui_hover'));
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.pressAction(i); });
       if (id !== 'wait') {
         bg.on('pointerover', () => this.hint.setText(`${abilityLabel(id)}: ${t(`ui.abilities.${id}.tooltip`, abilityParams(id, effectiveStats(this.state, u).mag))}`));
@@ -725,6 +733,7 @@ export default class BattleScene extends Phaser.Scene {
       if (e.key >= '1' && e.key <= '9') this.pressAction(Number(e.key) - 1);
       else if (e.key === 'w' || e.key === 'W') this.pressAction(this.buttons.findIndex((b) => b.id === 'wait'));
       else if (e.key === 'Escape') this.cancel();
+      else if (e.key === 'm' || e.key === 'M') { toggleMute(this); this.volumeText?.setText(volumeLabel()); }
       else if (e.key === 'd' || e.key === 'D') this.toggleDebug();
       else if (e.key === 'q' || e.key === 'Q') this.rotateView(-1);
       else if (e.key === 'e' || e.key === 'E') this.rotateView(1);
@@ -909,6 +918,22 @@ export default class BattleScene extends Phaser.Scene {
   private compassLabel?: Phaser.GameObjects.Text;
 
   /** Camera cluster, bottom right above the target panel (UX §2): Q, compass, E | −, +, C. */
+  private volumeText?: Phaser.GameObjects.Text;
+
+  /** Master volume: click cycles 100/60/30/off; M mutes. Remembered between visits. */
+  private drawVolumeButton(): void {
+    const bg = this.add.rectangle(10, 8, 84, 30, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
+    this.volumeText = text(this, 52, 23, volumeLabel(), 14).setOrigin(0.5).setDepth(1001);
+    bg.on('pointerover', () => { const tip = lookup('ui.audio.tooltip'); this.hint.setText(typeof tip === 'string' ? tip : 'Volume: click to change, M to mute'); });
+    bg.on('pointerout', () => this.refreshHint());
+    bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      cycleVolume(this);
+      this.volumeText!.setText(volumeLabel());
+      sfx(this, 'ui_click');
+    });
+  }
+
   private drawCameraButtons(): void {
     const x0 = 1270 - 24 - 6 * 44 - 10;
     this.add.rectangle(x0 - 6, 488, 6 * 44 + 10 + 12, 52, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
@@ -924,6 +949,7 @@ export default class BattleScene extends Phaser.Scene {
       text(this, x + 20, 514, label, 20).setOrigin(0.5).setDepth(1001);
       bg.on('pointerover', () => this.hint.setText(tip));
       bg.on('pointerout', () => this.refreshHint());
+      buttonSounds(this, bg);
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); fn(); });
     });
     this.compass = this.add.graphics().setDepth(1000);
@@ -973,6 +999,7 @@ export default class BattleScene extends Phaser.Scene {
     const b = this.buttons[i];
     const u = activeUnit(this.state);
     if (!b || !u || u.team !== 'player' || (this.mode.kind !== 'move' && this.mode.kind !== 'target')) return;
+    sfx(this, 'ui_click');
     if (b.id === 'wait') {
       this.mode = { kind: 'facing', facing: u.facing };
     } else {
@@ -983,6 +1010,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private cancel(): void {
+    if (this.mode.kind === 'target' || (this.mode.kind === 'facing' && !this.state.acted)) sfx(this, 'ui_back');
     if (this.mode.kind === 'target') this.mode = { kind: 'move' };
     else if (this.mode.kind === 'facing' && !this.state.acted) this.mode = { kind: 'move' };
     this.refresh();
@@ -1063,7 +1091,13 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private async performAbility(u: Unit, abilityId: string, target: Point): Promise<void> {
+    const cast = abilitySound(abilityId);
+    if (cast) sfx(this, cast);
     const results = useAbility(this.state, u.id, abilityId, target);
+    if (isAttack(abilityId) && results.length) {
+      const hit = results.some((r) => r.hit && r.damage > 0);
+      this.time.delayedCall(cast ? 180 : 0, () => sfx(this, hit ? 'atk_hit' : 'atk_miss'));
+    }
     this.refresh();
     for (const r of results) {
       const t = getUnit(this.state, r.unitId);
@@ -1076,6 +1110,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private finish(): void {
     this.refresh();
+    sting(this, this.state.winner === 'player' ? 'mus_victory_sting' : 'mus_defeat_sting');
     console.info('[oathbound] battle end', JSON.stringify({ winner: this.state.winner, turns: this.state.turnNumber, seed: this.state.seed }));
     this.time.delayedCall(1200, () => this.scene.start('Results', { state: this.state }));
   }
@@ -1163,11 +1198,18 @@ export default class BattleScene extends Phaser.Scene {
       if (typeof line === 'string') this.say(id, line, 2400);
     };
     switch (e.type) {
+      case 'turnStart':
+        if (isPlayer(e.unitId) && this.mode.kind !== 'deploy') sfx(this, 'unit_select');
+        break;
+      case 'move':
+        sfx(this, 'unit_move');
+        break;
       case 'ability':
         if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'attack');
         for (const r of e.results) if (r.hit && r.damage > 0 && isPlayer(r.unitId) && getUnit(this.state, r.unitId).status === 'ok') this.barkFor(r.unitId, 'hit', false, 0.5);
         break;
       case 'downed':
+        this.time.delayedCall(220, () => sfx(this, 'unit_down'));
         if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'downed', true);
         else if (e.by && isPlayer(e.by)) this.barkFor(e.by, 'kill', true);
         break;
@@ -1175,14 +1217,16 @@ export default class BattleScene extends Phaser.Scene {
         if (isPlayer(e.unitId)) this.barkFor(e.unitId, 'revived', true);
         break;
       case 'vowProgress':
-        if (e.vowId === 'bulwark' && e.progress >= e.goal) reaction(e.unitId, e.vowId, 'held');
+        // Held: the guard is done and the vow waits for battle end. No dedicated sound yet; a softer vow_sworn.
+        if (e.vowId === 'bulwark' && e.progress >= e.goal) { reaction(e.unitId, e.vowId, 'held'); sfx(this, 'vow_sworn', 0.8); }
         break;
       case 'vowFulfilled':
         // Bulwark is judged at battle end: its reaction belongs to the Reckoning.
-        if (!this.state.winner) { reaction(e.unitId, e.vowId, 'kept'); this.banner(t('ui.banner.vowKept'), '#f5c451'); }
+        if (!this.state.winner) { reaction(e.unitId, e.vowId, 'kept'); this.banner(t('ui.banner.vowKept'), '#f5c451'); sfx(this, 'vow_kept'); }
         break;
       case 'vowBroken':
         reaction(e.unitId, e.vowId, 'broken');
+        sfx(this, 'vow_broken');
         this.banner(t('ui.banner.vowBroken'), '#a78bfa');
         break;
       default:

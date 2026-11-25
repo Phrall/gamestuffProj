@@ -5,6 +5,7 @@ import { reckonVows } from '../core/vows';
 import { lookup, scene, t, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { FONT } from './theme';
+import { playMusic, sfx } from '../audio';
 
 // End screen: banner, Reckoning table (text from Writing's strings), then the post-battle scene.
 // The fully styled Reckoning is issue #10.
@@ -40,7 +41,14 @@ export default class ResultsScene extends Phaser.Scene {
     rows.push('', t('ui.reckoning.morale', { value: s.morale.player, tier: t(`ui.morale.${tier}.name`), change: change >= 0 ? `+${change}` : String(change) }));
     this.add.text(width / 2, 170, rows.join('\n'), { fontFamily: FONT, fontSize: '16px', color: '#e5e7eb', lineSpacing: 6 }).setOrigin(0.5, 0);
 
-    const again = () => this.scene.start('Battle');
+    // Vow sounds for the Reckoning: kept (incl. Bulwark judged at battle end), then lapsed.
+    const results = [...vows.values()].map((v) => v.status);
+    if (results.includes('fulfilled')) this.time.delayedCall(500, () => sfx(this, 'vow_kept'));
+    if (results.some((r) => r === 'lapsed' || r === 'intact')) this.time.delayedCall(results.includes('fulfilled') ? 2300 : 500, () => sfx(this, 'vow_lapsed'));
+    // The victory/defeat sting (4.5 s) plays out first, then the camp loop.
+    this.time.delayedCall(3600, () => playMusic(this, 'mus_camp_loop'));
+
+    const again = () => { sfx(this, 'ui_click'); this.scene.start('Battle'); };
     const prompt = () => {
       this.add.text(width / 2, 640, `${t('ui.reckoning.retry')}: click or press SPACE`, { fontFamily: FONT, fontSize: '18px', color: '#9ca3af' }).setOrigin(0.5);
       this.input.keyboard?.once('keydown-SPACE', again);
