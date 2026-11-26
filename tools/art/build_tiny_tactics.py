@@ -141,4 +141,17 @@ for state, fill, shade in [
                     px[x, y] = ((v + 2 * 30) // 3, (v + 2 * 30) // 3, (v + 2 * 40) // 3, a)
     im.save(os.path.join(out, f'gui-button-{state}.png'))
 
+# HUD at 1 lp (UX readability §8): action tabs, timeline chips, small plates and buttons.
+tab = gui_src('dragonTabC-Sheet.png')  # 4 frames of 42x22: rest, hover, pressed, disabled
+for i in range(4):
+    tab.crop((i * 42, 0, i * 42 + 42, 22)).save(os.path.join(out, f'gui-tab-{i}.png'))
+chip = gui_src('dragonFilledFrame-Sheet.png')  # 4 frames of 32x32
+for i in range(4):
+    chip.crop((i * 32, 0, i * 32 + 32, 32)).save(os.path.join(out, f'gui-chip-{i}.png'))
+gui_src('dragon9SlicesC.png').save(os.path.join(out, 'gui-plate.png'))
+for name, key in [('dragonLessButton-Sheet.png', 'gui-less'), ('dragonMoreButton-Sheet.png', 'gui-more'),
+                  ('dragonLeftArrowButton-Sheet.png', 'gui-left'), ('dragonRightArrowButton-Sheet.png', 'gui-right'),
+                  ('dragonOptionsButton-Sheet.png', 'gui-options'), ('dragonHelpButton-Sheet.png', 'gui-help')]:
+    gui_src(name).save(os.path.join(out, f'{key}.png'))
+
 print('ok', len(os.listdir(out)), 'files')

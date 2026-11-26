@@ -12,11 +12,11 @@ import { movePreview, type MovePreview, type Threat } from '../core/movePreview'
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FACTION, FONT, MARK } from './theme';
-import { RESCALE, fitCamera, layoutScale, mapZooms } from '../view';
+import { LP, RESCALE, canvasSize, fitCamera, layoutScale, layoutSize, mapZooms, screenLp } from '../view';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
-import { ART_SCALE, TILE, face, guiButton, guiPanel, hasArt, setButtonState, unitLook, type ButtonState } from '../art';
+import { ART_SCALE, TILE, face, guiButton, guiPanel, hasArt, hudImage, hudPanel, hudPlate, hudTab, setButtonState, setTabFrame, unitLook, type ButtonState, type TabFrame } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
@@ -79,6 +79,14 @@ export const abilityLabel = (id: string): string => {
   return n !== id ? n : id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 };
 
+/** lp to layout units (view.ts: 2 layout units per lp). The HUD is specified in lp (UX §8). */
+const X = (v: number): number => v * LP;
+const DARK = '#1f1e1b';
+const BONE = '#ede6d3';
+
+/** What the target panel shows (UX §8). */
+interface PanelView { head: string; name?: string; big?: string; detail?: string; value?: { s: string; warn: boolean }; lines: string[]; strip?: string }
+
 const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, color: string = COLORS.text) => // crisp via view.installCrispText
   scene.add.text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color });
 
@@ -106,15 +114,23 @@ export default class BattleScene extends Phaser.Scene {
 
   private timeline!: Phaser.GameObjects.Container;
   private moraleText!: Phaser.GameObjects.Text;
-  private unitPanel!: Phaser.GameObjects.Text;
-  private previewPanel!: Phaser.GameObjects.Text;
+  private unitTitle!: Phaser.GameObjects.Text;
+  private unitClass!: Phaser.GameObjects.Text;
+  private unitHp!: Phaser.GameObjects.Text;
+  private unitHpBar!: Phaser.GameObjects.Graphics;
+  private unitBody!: Phaser.GameObjects.Text;
+  private actionHead!: Phaser.GameObjects.Text;
+  /** Target panel rows (UX §8). */
+  private pv!: { head: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text; big: Phaser.GameObjects.Text; detail: Phaser.GameObjects.Text; value: Phaser.GameObjects.Text; body: Phaser.GameObjects.Text; strip: Phaser.GameObjects.Rectangle; stripText: Phaser.GameObjects.Text };
   /** Target panel controls (UX §2, §3): Confirm names the action and target; arrows step targets. */
-  private confirm!: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; skin: Phaser.GameObjects.NineSlice | null };
-  private targetArrows: Phaser.GameObjects.Text[] = [];
+  private confirm!: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
+  private targetArrows: Phaser.GameObjects.GameObject[] = [];
   private hint!: Phaser.GameObjects.Text;
+  private hintPlate!: Phaser.GameObjects.Rectangle;
   private logText!: Phaser.GameObjects.Text;
   private debugText!: Phaser.GameObjects.Text;
-  private buttons: { id: string; bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; skin: Phaser.GameObjects.NineSlice | null }[] = [];
+  private buttons: { id: string; bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; cd: Phaser.GameObjects.Text; ring: Phaser.GameObjects.Graphics; skin: Phaser.GameObjects.NineSlice | null; destroy: () => void }[] = [];
+  private logTimes: number[] = [];
   private log: string[] = [];
   private eventCursor = 0;
 
@@ -149,9 +165,12 @@ export default class BattleScene extends Phaser.Scene {
     this.setupCameras();
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
-    this.drawUi();
-    this.drawCameraButtons();
-    this.drawVolumeButton();
+    this.hudObjs = [];
+    this.overlay = [];
+    this.overlayKind = null;
+    this.logTimes = [];
+    this.buildHud();
+    this.time.addEvent({ delay: 250, loop: true, callback: () => this.renderLog() });
     this.bindInput();
     this.exposeForQa();
     initVolume(this);
@@ -163,33 +182,38 @@ export default class BattleScene extends Phaser.Scene {
 
   private vowChoice: Record<string, VowId | null> = {};
   private deployUi: Phaser.GameObjects.GameObject[] = [];
+  private redrawDeploy?: () => void;
 
   private showDeploy(seed: number): void {
     this.mode = { kind: 'busy' };
     this.refresh();
     const order: (VowId | null)[] = [null, 'bulwark', 'loneBlade'];
     const draw = () => {
+      if (this.mode.kind !== 'deploy') return;
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
+      // Laid out for 1280 x 720 layout units; centred on the actual screen (UX §8).
+      const L = layoutSize();
+      const ox = Math.round((L.w - 1280) / 4) * 2, oy = Math.round((L.h - 720) / 4) * 2;
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
-      const frame = add(this.add.rectangle(330, 122, 620, 460, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      const frame = add(this.add.rectangle(330 + ox, 122 + oy, 620, 460, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
       const framed = this.skinPanel(frame);
       if (framed) add(framed);
-      add(text(this, 640, 140, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
-      add(text(this, 640, 174, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
+      add(text(this, 640 + ox, 140 + oy, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
+      add(text(this, 640 + ox, 174 + oy, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
       const chosen = [...new Set(Object.values(this.vowChoice).filter((v): v is VowId => !!v))];
       const notes = chosen.map((v) => `${vowName(v)}: ${t(`ui.vows.${v}.summary`, vowParams(v))} ${t(`ui.vows.${v}.breaks`, vowParams(v))}`);
       const notesY = 214 + this.state.units.filter((u) => u.team === 'player').length * 44;
-      if (notes.length) add(text(this, 640, notesY, notes.join('\n\n'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(590).setAlign('center'));
+      if (notes.length) add(text(this, 640 + ox, notesY + oy, notes.join('\n\n'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001).setWordWrapWidth(590).setAlign('center'));
       this.state.units.filter((u) => u.team === 'player').forEach((u, i) => {
-        const y = 206 + i * 44;
+        const y = 206 + i * 44 + oy;
         const choice = this.vowChoice[u.id] ?? null;
-        add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
-        const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
+        add(text(this, 360 + ox, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
+        const btn = add(this.add.rectangle(600 + ox, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
         const label = choice ? `${vowName(choice)}: ${t(`ui.vows.${choice}.progress`, vowParams(choice, 0))}` : t('ui.deploy.noVow');
         const skin = this.skinButton(btn, choice ? 'selected' : 'rest');
         if (skin) add(skin);
-        add(text(this, 622, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
+        add(text(this, 622 + ox, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
           this.vowChoice[u.id] = order[(order.indexOf(choice) + 1) % order.length]!;
@@ -197,10 +221,10 @@ export default class BattleScene extends Phaser.Scene {
           draw();
         });
       });
-      const go = add(this.add.rectangle(540, 524, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      const go = add(this.add.rectangle(540 + ox, 524 + oy, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
       const goSkin = this.skinButton(go, 'selected');
       if (goSkin) add(goSkin);
-      add(text(this, 640, 544, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
+      add(text(this, 640 + ox, 544 + oy, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
       buttonSounds(this, go);
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
@@ -227,6 +251,7 @@ export default class BattleScene extends Phaser.Scene {
       this.time.delayedCall(0, () => {
         this.mode = { kind: 'deploy' };
         this.refreshHint();
+        this.redrawDeploy = draw;
         draw();
       });
     });
@@ -570,66 +595,242 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
-  // ---------- UI ----------
+  // ---------- HUD (UX readability §8: laid out in lp on a W x H screen, GUI pieces at 1 lp) ----------
 
-  private drawUi(): void {
-    this.timeline = this.add.container(0, 0).setDepth(1000);
-    this.moraleText = text(this, 1270, 12, '', 14).setOrigin(1, 0).setDepth(1000).setInteractive();
+  /** Everything buildHud made, destroyed and rebuilt when the logical screen size changes. */
+  private hudObjs: Phaser.GameObjects.GameObject[] = [];
+  /** Camera cluster rect in lp; the board ignores clicks there. */
+  private camRect = { x: 0, y: 0, w: 0, h: 0 };
+  private compassAt = { x: 0, y: 0 };
+  private hoverBtn = -1;
+
+  private buildHud(): void {
+    for (const o of this.hudObjs) o.destroy();
+    this.hudObjs = [];
+    for (const b of this.buttons) b.destroy();
+    this.buttons = [];
+    const before = new Set(this.children.list);
+    const { w: W, h: H } = screenLp();
+
+    // Top left: Menu and Help, then the battle log.
+    this.hudButton(4, 4, 24, { key: 'gui-options', glyph: '≡', tip: 'Menu (Esc): volume, restart, quit', fn: () => this.openOverlay('pause') });
+    this.hudButton(32, 4, 24, { key: 'gui-help', glyph: '?', tip: 'Help (H): every key and control', fn: () => this.openOverlay('help') });
+    this.logText = text(this, X(4), X(32), '', 14).setDepth(1000).setWordWrapWidth(X(166)).setBackgroundColor('#1f1e1bb0').setPadding(X(2), X(1), X(2), X(1));
+    this.debugText = text(this, X(4), X(32), '', 14, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(this.debug);
+
+    // Top right: morale. Top centre: the turn timeline.
+    this.moraleText = text(this, X(W - 4), X(4), '', 14).setOrigin(1, 0).setAlign('right').setDepth(1000)
+      .setBackgroundColor('#1f1e1bb0').setPadding(X(2), X(1), X(2), X(1)).setInteractive();
     this.moraleText.on('pointerover', () => {
       const tier = teamMorale(this.state, 'player').name.toLowerCase();
-      this.hint.setText(`${t(`ui.morale.${tier}.name`)}: ${t(`ui.morale.${tier}.tooltip`, moraleParams(tier))}`);
+      this.setHint(`${t(`ui.morale.${tier}.name`)}: ${t(`ui.morale.${tier}.tooltip`, moraleParams(tier))}`);
     });
     this.moraleText.on('pointerout', () => this.refreshHint());
-    this.logText = text(this, 12, 96, '', 12, COLORS.textDim).setDepth(1000).setWordWrapWidth(280);
-    // Left column, in place of the log, so it never covers the map (QA #14).
-    this.debugText = text(this, 8, 96, '', 10, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
+    this.timeline = this.add.container(0, 0).setDepth(1000);
 
-    const panel = (x: number, w: number) => this.skinPanel(this.add.rectangle(x, 548, w, 162, COLORS.panel).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999));
-    panel(10, 380);
-    panel(400, 480);
-    panel(890, 380);
-    this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
-    this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
-    // Primary style (UX): bone fill and dark text, so Confirm never reads as another action.
-    const cbg = this.add.rectangle(902, 660, 356, 36, 0xede6d3).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(1000).setInteractive({ useHandCursor: true });
-    const cskin = this.skinButton(cbg, 'primary');
-    const clabel = text(this, 920, 678, '', 14, '#2a2420').setOrigin(0, 0.5).setDepth(1001);
+    // Hint plate, bottom edge at H - 100, centred; it grows upward for a long tooltip.
+    this.hintPlate = this.add.rectangle(X(W / 2), X(H - 100), X(220), X(13), MARK.edge, 0.75).setOrigin(0.5, 1).setDepth(999);
+    this.hint = text(this, X(W / 2), X(H - 101.5), '', 14, BONE).setOrigin(0.5, 1).setAlign('center').setDepth(1000);
+
+    // Bottom row: unit panel, action panel, target panel.
+    this.hudBox(4, H - 96, 176, 92);
+    this.unitTitle = text(this, X(12), X(H - 89), '', 32, BONE).setDepth(1000);
+    this.unitClass = text(this, X(170), X(H - 83), '', 14, COLORS.textDim).setOrigin(1, 0).setDepth(1000);
+    this.unitHp = text(this, X(12), X(H - 71), '', 14).setDepth(1000);
+    this.unitHpBar = this.add.graphics().setDepth(1000);
+    this.unitBody = text(this, X(12), X(H - 62), '', 14).setDepth(1000).setWordWrapWidth(X(160)).setMaxLines(6);
+
+    const ax = W / 2 - 136;
+    this.hudBox(ax, H - 96, 272, 92);
+    this.actionHead = text(this, X(ax + 8), X(H - 88), '', 14, COLORS.textDim).setDepth(1000);
+    text(this, X(ax + 8), X(H - 23), '1-6 act   Tab next   Enter ok   Esc back', 14, '#8c8981').setDepth(1000);
+
+    const tx = W - 180;
+    this.hudBox(tx, H - 96, 176, 92);
+    const px = X(tx + 8);
+    this.pv = {
+      head: text(this, px, X(H - 83), '', 14, '#f5c451').setOrigin(0, 0.5).setDepth(1000),
+      name: text(this, px, 0, '', 14).setDepth(1000),
+      big: text(this, px, 0, '', 32, BONE).setDepth(1000),
+      detail: text(this, px, 0, '', 14, COLORS.textDim).setDepth(1000),
+      value: text(this, px, 0, '', 14).setDepth(1000),
+      body: text(this, px, 0, '', 14).setDepth(1000).setWordWrapWidth(X(160)),
+      strip: this.add.rectangle(px, X(H - 39), X(160), X(11), 0x5b1f17).setOrigin(0).setDepth(1000),
+      stripText: text(this, px + X(3), X(H - 29.5), '', 14, BONE).setOrigin(0, 0.5).setDepth(1001),
+    };
+    // Confirm (UX §2, §8): 160 x 16, bone primary, drawn in code so it stays on the 1 lp grid.
+    const cbg = this.add.rectangle(px, X(H - 26), X(160), X(16), MARK.bone).setOrigin(0).setStrokeStyle(X(1), MARK.edge).setDepth(1000).setInteractive({ useHandCursor: true });
+    const clabel = text(this, px + X(80), X(H - 18), '', 14, DARK).setOrigin(0.5).setDepth(1001);
+    cbg.on('pointerover', () => cbg.setFillStyle(0xfff6df).setStrokeStyle(X(1), COLORS.gold));
+    cbg.on('pointerout', () => cbg.setFillStyle(MARK.bone).setStrokeStyle(X(1), MARK.edge));
     cbg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); sfx(this, 'ui_click'); this.confirmTarget(); });
-    this.confirm = { bg: cbg, label: clabel, skin: cskin };
-    for (const o of [cbg, clabel, cskin]) o?.setVisible(false);
-    this.targetArrows = [['◀', 1206, -1], ['▶', 1240, 1]].map(([ch, x, dir]) => {
-      const a = text(this, x as number, 556, ch as string, 18, '#f5c451').setDepth(1001).setInteractive({ useHandCursor: true });
-      a.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.cycleTarget(dir as number); });
-      return a;
+    this.confirm = { bg: cbg, label: clabel };
+    this.targetArrows = ([[-1, 'gui-left', '◀', W - 48], [1, 'gui-right', '▶', W - 30]] as const).map(([dir, key, glyph, x]) =>
+      this.hudButton(x, H - 91, 16, { key, glyph, tip: dir < 0 ? 'Previous target (Shift+Tab)' : 'Next target (Tab)', fn: () => this.cycleTarget(dir) }));
+
+    // Camera cluster on a 9-slice C plate above the target panel: rotate, compass, rotate | zoom out, zoom in, centre.
+    this.camRect = { x: W - 134, y: H - 128, w: 130, h: 28 };
+    const c = this.camRect;
+    this.hudBox(c.x, c.y, c.w, c.h, 'plate');
+    const by = c.y + 6;
+    this.hudButton(c.x + 6, by, 16, { glyph: '⟲', tip: t('ui.camera.rotateLeft'), fn: () => this.rotateView(-1) });
+    this.compassAt = { x: X(c.x + 36), y: X(c.y + 14) };
+    this.compass = this.add.graphics().setDepth(1000);
+    this.compassLabel = text(this, 0, 0, 'N', 14, '#c0533f').setOrigin(0.5).setDepth(1001).setStroke(DARK, X(1));
+    this.hudButton(c.x + 50, by, 16, { glyph: '⟳', tip: t('ui.camera.rotateRight'), fn: () => this.rotateView(1) });
+    this.hudButton(c.x + 74, by, 16, { key: 'gui-less', glyph: '−', tip: `${t('ui.camera.zoomOut')} (-)`, fn: () => this.zoomStep(-1) });
+    this.hudButton(c.x + 92, by, 16, { key: 'gui-more', glyph: '+', tip: `${t('ui.camera.zoomIn')} (+)`, fn: () => this.zoomStep(1) });
+    this.hudButton(c.x + 110, by, 16, { glyph: '◎', tip: `${t('ui.camera.center')} (C)`, fn: () => this.centerOnActive(true) });
+    this.drawCompass();
+
+    this.hudObjs = this.children.list.filter((o) => !before.has(o));
+    this.rebuildButtons();
+  }
+
+  /** A framed HUD box: 9-slice B panel or C plate at 1 lp, with a plain rectangle under it as the canvas fallback. */
+  private hudBox(x: number, y: number, w: number, h: number, kind: 'panel' | 'plate' = 'panel'): void {
+    const r = this.add.rectangle(X(x), X(y), X(w), X(h), COLORS.panel, 0.94).setOrigin(0).setStrokeStyle(X(1), COLORS.panelEdge).setDepth(999);
+    const s = kind === 'panel' ? hudPanel(this, X(x), X(y), w, h) : hudPlate(this, X(x), X(y), w, h);
+    if (s) { s.setDepth(999); r.setVisible(false); }
+  }
+
+  /**
+   * A small HUD button at (x, y) lp, `size` lp square. With a sheet key it uses the pack's frames
+   * (0 rest, 1 hover, 2 pressed, 3 disabled); otherwise it is drawn in code: dark square, bone glyph.
+   */
+  private hudButton(x: number, y: number, size: number, o: { key?: string; glyph: string; tip: string; fn: () => void }): Phaser.GameObjects.GameObject {
+    const img = o.key ? hudImage(this, X(x), X(y), o.key, 0) : null;
+    let hit: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+    let glyph: Phaser.GameObjects.Text | null = null;
+    if (img) hit = img;
+    else {
+      hit = this.add.rectangle(X(x), X(y), X(size), X(size), MARK.edge).setOrigin(0).setStrokeStyle(X(1), 0x5a5347);
+      glyph = text(this, X(x + size / 2), X(y + size / 2), o.glyph, size > 20 ? 32 : 14, BONE).setOrigin(0.5).setDepth(1001);
+    }
+    hit.setDepth(1000).setInteractive({ useHandCursor: true });
+    const look = (f: number) => {
+      if (img) img.setFrame(img.getData('off') ? 3 : f);
+      else (hit as Phaser.GameObjects.Rectangle).setFillStyle(f ? 0x3a3631 : MARK.edge).setStrokeStyle(X(1), f ? COLORS.gold : 0x5a5347);
+    };
+    hit.on('pointerover', () => { look(1); sfx(this, 'ui_hover'); this.setHint(o.tip); });
+    hit.on('pointerout', () => { look(0); this.refreshHint(); });
+    hit.on('pointerup', () => look(1));
+    hit.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      ev.stopPropagation();
+      look(2);
+      sfx(this, 'ui_click');
+      o.fn();
     });
-    this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
-    // Key hints, split so each stays inside its own panel (QA #27).
-    text(this, 22, 696, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
-    text(this, 412, 696, '1-6: actions   Tab: next target   Enter: confirm\nW: wait   Esc: back', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    if (glyph) hit.once('destroy', () => glyph!.destroy());
+    if (glyph) hit.setData('glyph', glyph);
+    return hit;
+  }
+
+  private setHint(s: string): void {
+    const { w: W } = screenLp();
+    this.hint.setWordWrapWidth(X(Math.min(400, W - 290))).setText(s);
+    const w = Math.max(X(220), this.hint.width + X(12));
+    this.hintPlate.setSize(w, Math.max(X(13), this.hint.height + X(3))).setOrigin(0.5, 1).setVisible(!!s);
+    this.hint.setVisible(!!s);
+  }
+
+  /** Last log lines from the past 4 s, at most 3 wrapped lines (UX §8). */
+  private renderLog(): void {
+    if (!this.logText?.active) return;
+    const now = this.time.now;
+    let shown: string[] = [];
+    for (let i = this.log.length - 1; i >= 0; i--) {
+      if (now - (this.logTimes[i] ?? 0) > 4000) break;
+      const next = [this.log[i]!, ...shown];
+      if (this.logText.getWrappedText(next.join('\n')).length > 3) break;
+      shown = next;
+    }
+    this.logText.setText(shown.join('\n')).setVisible(!this.debug && shown.length > 0);
+  }
+
+  // ---------- pause and help overlays ----------
+
+  private overlay: Phaser.GameObjects.GameObject[] = [];
+  private overlayKind: 'pause' | 'help' | null = null;
+
+  private closeOverlay(): void {
+    for (const o of this.overlay) o.destroy();
+    this.overlay = [];
+    this.overlayKind = null;
+  }
+
+  private openOverlay(kind: 'pause' | 'help'): void {
+    this.closeOverlay();
+    this.overlayKind = kind;
+    const before = new Set(this.children.list);
+    const { w: W, h: H } = screenLp();
+    const stop = (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => ev.stopPropagation();
+    const shade = this.add.rectangle(0, 0, X(W), X(H), 0x000000, 0.55).setOrigin(0).setDepth(2900).setInteractive();
+    shade.on('pointerdown', (p: Phaser.Input.Pointer, x: number, y: number, ev: Phaser.Types.Input.EventData) => { stop(p, x, y, ev); this.closeOverlay(); });
+    const pw = kind === 'help' ? 300 : 150;
+    const ph = kind === 'help' ? 168 : 110;
+    const px = Math.round(W / 2 - pw / 2), py = Math.round(H / 2 - ph / 2);
+    const back = this.add.rectangle(X(px), X(py), X(pw), X(ph), COLORS.panel, 0.98).setOrigin(0).setStrokeStyle(X(1), COLORS.gold).setDepth(2901).setInteractive();
+    back.on('pointerdown', stop);
+    const frame = hudPanel(this, X(px), X(py), pw, ph);
+    if (frame) { frame.setDepth(2901.5); back.setStrokeStyle(); }
+    text(this, X(px + 12), X(py + 8), kind === 'help' ? 'Controls' : 'Paused', 32, '#f5c451').setDepth(2902);
+    if (kind === 'help') {
+      const left = ['Click: move, select, confirm', 'Right-click / Esc: back', '1-6: actions   W: wait', 'Tab / Shift+Tab: next target', 'Enter / Space: confirm', 'Arrows: facing after acting'];
+      const right = ['Drag, arrows: pan', 'Wheel, + / -: zoom', 'Q / E: rotate', 'C: centre on unit', 'R / Home: reset view', 'M: mute   D: debug   H: help'];
+      text(this, X(px + 12), X(py + 30), left.join('\n'), 14).setDepth(2902).setLineSpacing(X(3));
+      text(this, X(px + 156), X(py + 30), right.join('\n'), 14).setDepth(2902).setLineSpacing(X(3));
+      text(this, X(px + pw / 2), X(py + ph - 20), 'Click anywhere or Esc to close', 14, COLORS.textDim).setOrigin(0.5, 0).setDepth(2902);
+    } else {
+      const items: [() => string, () => void][] = [
+        [() => 'Resume', () => this.closeOverlay()],
+        [() => volumeLabel(), () => { cycleVolume(this); }],
+        [() => 'Restart battle', () => { this.closeOverlay(); this.scene.restart(); }],
+        [() => 'Back to title', () => { this.closeOverlay(); this.scene.start('Menu'); }],
+      ];
+      items.forEach(([label, fn], i) => {
+        const y = py + 30 + i * 16;
+        const row = this.add.rectangle(X(px + 10), X(y), X(pw - 20), X(14), MARK.edge, 0.6).setOrigin(0).setDepth(2902).setInteractive({ useHandCursor: true });
+        const tx = text(this, X(px + 18), X(y + 7), label(), 14, BONE).setOrigin(0, 0.5).setDepth(2903);
+        row.on('pointerover', () => { row.setFillStyle(0x3a3631, 1); tx.setColor('#f5c451'); sfx(this, 'ui_hover'); });
+        row.on('pointerout', () => { row.setFillStyle(MARK.edge, 0.6); tx.setColor(BONE); });
+        row.on('pointerdown', (p: Phaser.Input.Pointer, x: number, yy: number, ev: Phaser.Types.Input.EventData) => {
+          stop(p, x, yy, ev);
+          sfx(this, 'ui_click');
+          fn();
+          if (tx.active) tx.setText(label());
+        });
+      });
+    }
+    this.overlay = this.children.list.filter((o) => !before.has(o));
   }
 
   private rebuildButtons(): void {
-    for (const b of this.buttons) { b.bg.destroy(); b.label.destroy(); b.skin?.destroy(); }
+    for (const b of this.buttons) b.destroy();
     this.buttons = [];
     const u = activeUnit(this.state);
+    this.actionHead.setText(u && u.team === 'player' ? `${u.name} · actions` : u ? `${u.name} is acting` : '');
     if (!u || u.team !== 'player') return;
+    const { w: W, h: H } = screenLp();
     const ids = u.abilities.filter((id) => ABILITIES[id]?.type !== 'passive');
     ids.push('wait');
     ids.forEach((id, i) => {
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      const x = 412 + col * 156;
-      const y = 560 + row * 48;
-      const bg = this.add.rectangle(x, y, 148, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-      const skin = this.skinButton(bg, 'rest');
-      const label = text(this, x + 18, y + 11, '', 14).setDepth(1001);
-      bg.on('pointerover', () => sfx(this, 'ui_hover'));
+      // 3 x 2 grid of 82 x 22 tabs, 5 lp column gap and 4 lp row gap (UX §8).
+      const x = X(W / 2 - 128 + (i % 3) * 87);
+      const y = X(H - 77 + Math.floor(i / 3) * 26);
+      const bg = this.add.rectangle(x, y, X(82), X(22), 0x1f2937).setOrigin(0).setStrokeStyle(X(1), COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
+      const skin = hudTab(this, x, y, 82);
+      if (skin) { skin.setDepth(1000); bg.setFillStyle(0x000000, 0).setStrokeStyle(); }
+      const ring = this.add.graphics().setDepth(1001);
+      const label = text(this, x + X(6), y + X(10), '', 14).setOrigin(0, 0.5).setDepth(1001);
+      const cd = text(this, x + X(70), y + X(10), '', 14).setOrigin(1, 0.5).setDepth(1001);
+      bg.on('pointerover', () => { sfx(this, 'ui_hover'); this.hoverBtn = i; this.refreshButtons(); });
+      bg.on('pointerout', () => { this.hoverBtn = -1; this.refreshButtons(); this.refreshHint(); });
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.pressAction(i); });
-      if (id !== 'wait') {
-        bg.on('pointerover', () => this.hint.setText(`${abilityLabel(id)}: ${t(`ui.abilities.${id}.tooltip`, abilityParams(id, effectiveStats(this.state, u).mag))}`));
-        bg.on('pointerout', () => this.refreshHint());
-      }
-      this.buttons.push({ id, bg, label, skin });
+      if (id !== 'wait') bg.on('pointerover', () => this.setHint(`${abilityLabel(id)}: ${t(`ui.abilities.${id}.tooltip`, abilityParams(id, effectiveStats(this.state, u).mag))}`));
+      else bg.on('pointerover', () => this.setHint('Wait or end the turn, then choose a facing (W)'));
+      const destroy = () => { for (const o of [bg, skin, ring, label, cd]) o?.destroy(); };
+      this.buttons.push({ id, bg, label, cd, ring, skin, destroy });
     });
     this.refreshButtons();
   }
@@ -641,56 +842,96 @@ export default class BattleScene extends Phaser.Scene {
       let suffix = '';
       if (b.id !== 'wait' && u) {
         const cd = u.cooldowns[b.id] ?? 0;
-        if (cd > 0) suffix = ` ·${cd}`;
-        if (u.usedOnce.includes(b.id)) suffix = ' ·used';
+        if (cd > 0) suffix = `CD ${cd}`;
+        if (u.usedOnce.includes(b.id)) suffix = 'used';
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
-      b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
-      b.label.setColor(enabled ? COLORS.text : '#4b5563');
-      // Keep long labels ("Aimed Shot ·2", "Volley (used)") inside the frame's ornaments (QA #40).
-      // Left padding is 18 px and the right ornament ~18 px: the label must fit in width - 36.
-      // Pixel fonts only come in whole sizes, so a long label drops the key number instead of shrinking.
-      if (b.label.width > b.bg.width - 36) b.label.setText(b.label.text.replace(/^\d /, ''));
-      if (b.skin) this.setSkin(b.skin, selected ? 'selected' : enabled ? 'rest' : 'disabled');
-      else b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
+      const name = b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id);
+      b.label.setText(`${selected ? '▶' : i + 1} ${name}`);
+      b.cd.setText(suffix);
+      // A long label drops its key number rather than shrink (pixel fonts come in whole sizes only).
+      const room = X(82 - 6 - 12) - (suffix ? b.cd.width + X(3) : 0);
+      if (b.label.width > room) b.label.setText(selected ? `▶${name}` : name);
+      const frame: TabFrame = !enabled ? 3 : selected || this.hoverBtn === i ? 1 : 0;
+      if (b.skin) {
+        setTabFrame(b.skin, frame);
+        const col = enabled ? DARK : '#8c8981';
+        b.label.setColor(col);
+        b.cd.setColor(col);
+      } else {
+        b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(X(1), selected ? COLORS.gold : COLORS.panelEdge);
+        b.label.setColor(enabled ? COLORS.text : '#4b5563');
+        b.cd.setColor(COLORS.textDim);
+      }
+      // Selected: a 2 lp bone outline with a 1 lp dark edge (UX §4, §8).
+      b.ring.clear();
+      if (selected) {
+        const { x, y } = b.bg;
+        b.ring.lineStyle(X(1), MARK.edge, 1).strokeRect(x - X(2.5), y - X(2.5), X(87), X(27));
+        b.ring.lineStyle(X(2), MARK.bone, 1).strokeRect(x - X(1), y - X(1), X(84), X(24));
+      }
     });
   }
 
   private refreshTimeline(): void {
     this.timeline.removeAll(true);
+    const { w: W } = screenLp();
     const active = this.state.activeId ?? undefined;
     const entries = forecast(this.state.units, 8, active);
-    const w = 96;
-    const x0 = 640 - (entries.length * (w + 6)) / 2;
-    this.timeline.add(text(this, x0 - 12, 30, 'NEXT', 12, COLORS.textDim).setOrigin(1, 0.5));
+    const x0 = W / 2 - 172;
+    this.timeline.add(text(this, X(x0 + 12), X(20), 'NEXT', 14, COLORS.textDim).setOrigin(0.5).setStroke(DARK, X(1)));
+    const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
+    const targetId = sel ? occupant(this.state, sel)?.id : undefined;
     entries.forEach((e, i) => {
       const u = getUnit(this.state, e.unitId);
-      const x = x0 + i * (w + 6);
+      const cx = x0 + 24 + i * 40 + 4;
       const lit = this.hoverUnitId === u.id;
-      const bg = this.add.rectangle(x, 12, w, 36, u.team === 'player' ? 0x0c4a6e : 0x7f1d1d).setOrigin(0)
-        .setStrokeStyle(i === 0 || lit ? 2 : 1, i === 0 ? COLORS.gold : lit ? COLORS.hover : COLORS.panelEdge)
-        .setInteractive();
-      bg.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
-      bg.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
+      const out = e.downed || u.status !== 'ok';
+      const team = u.team === 'player' ? FACTION.squadHp : FACTION.court;
+      const chip = hudImage(this, X(cx), X(4), `gui-chip-${out ? 3 : lit ? 1 : 0}`);
+      const hit = chip ?? this.add.rectangle(X(cx), X(4), X(32), X(32), u.team === 'player' ? 0x0c4a6e : 0x7f1d1d).setOrigin(0).setStrokeStyle(X(1), lit ? COLORS.hover : COLORS.panelEdge);
+      hit.setInteractive({ useHandCursor: true });
+      hit.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
+      hit.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
       // Clicking a chip points at that unit's tile, so units hidden on the board can still be targeted.
-      bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+      hit.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
         ev.stopPropagation();
         if (u.status === 'lost') return;
         if (this.mode.kind === 'target') { void this.clickTile(u.pos); return; } // select, then confirm (UX §3)
         this.setHover({ ...u.pos });
         this.panTo(u.pos);
       });
-      const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${shortName(u)}`, 12).setOrigin(0.5);
-      this.timeline.add([bg, t]);
+      this.timeline.add(hit);
+      // Portrait: the idle frame (last attack frame) cropped inside the chip, over a 3 lp team band.
+      const key = `${unitLook(u).body}-attackSE`;
+      if (this.art && this.textures.exists(key)) {
+        const img = this.add.image(X(cx), X(4), key, 3).setOrigin(0).setScale(LP).setCrop(3, 3, 26, 23);
+        if (out) img.setTint(0x6b6b6b);
+        this.timeline.add(img);
+      } else {
+        this.timeline.add(text(this, X(cx + 16), X(18), glyphFor(u), 14).setOrigin(0.5));
+      }
+      this.timeline.add(this.add.rectangle(X(cx + 3), X(4 + 26), X(26), X(3), out ? 0x4b4b4b : team).setOrigin(0));
+      const ring = i === 0 ? MARK.bone : u.id === targetId ? MARK.target : null;
+      if (ring !== null) {
+        const g = this.add.graphics();
+        g.lineStyle(X(1), MARK.edge, 1).strokeRect(X(cx - 2.5), X(1.5), X(37), X(37));
+        g.lineStyle(X(2), ring, 1).strokeRect(X(cx - 1), X(3), X(34), X(34));
+        this.timeline.add(g);
+      }
+      let name = `${e.downed ? '☠' : ''}${shortName(u)}`;
+      const label = text(this, X(cx + 16), X(37), name, 14).setOrigin(0.5, 0).setStroke(DARK, X(1));
+      while (label.width > X(39) && name.length > 2) { name = name.slice(0, -1); label.setText(`${name}.`); }
+      this.timeline.add(label);
     });
     // Wait ghost (UX board): where the active unit would land if it waited (CT 40).
     const a = activeUnit(this.state);
     if (a && a.team === 'player' && !this.state.moved && !this.state.acted) {
       const ghost = forecast(this.state.units, 8, a.id, 40).findIndex((e, i) => i > 0 && e.unitId === a.id);
       if (ghost > 0) {
-        const gx = x0 + ghost * (w + 6) + w / 2;
-        this.timeline.add(text(this, gx, 54, `▲ ${t('ui.timeline.waitGhost')}`, 11, '#f5c451').setOrigin(0.5, 0));
+        const gx = x0 + 24 + ghost * 40 + 20;
+        this.timeline.add(text(this, X(gx), X(47), `▲ ${t('ui.timeline.waitGhost')}`, 14, '#f5c451').setOrigin(0.5, 0).setStroke(DARK, X(1)));
       }
     }
   }
@@ -709,19 +950,23 @@ export default class BattleScene extends Phaser.Scene {
     this.wasShaken = shaken;
   }
 
-  private unitSummary(u: Unit, title: string): string {
+  private className(u: Unit): string {
+    const cls = u.classId ? CLASSES[u.classId]!.name : u.leader ? 'Leader' : 'Oathcourt';
+    return u.status !== 'ok' ? `${u.status.toUpperCase()} (${u.reviveCounter})` : cls;
+  }
+
+  /** Stat rows shared by the unit panel and the hover card. */
+  private unitLines(u: Unit): string[] {
     const s = effectiveStats(this.state, u);
     const moraleMove = u.moraleMove ? ` (${u.moraleMove} Shaken)` : '';
     const mods = u.modifiers.map((m) => abilityLabel(m.source)).join(', ');
-    const cls = u.classId ? CLASSES[u.classId]!.name : u.leader ? 'Leader' : 'Oathcourt';
     return [
-      `${title}${u.name}  ·  ${cls}${u.status !== 'ok' ? `  ·  ${u.status.toUpperCase()} (${u.reviveCounter})` : ''}`,
-      `HP ${u.hp}/${u.base.hp}   CT ${u.ct}   Facing ${u.facing} ${this.screenArrow(u.facing)}`,
+      `CT ${u.ct}   Facing ${u.facing} ${this.screenArrow(u.facing)}`,
       `Atk ${s.atk}  Mag ${s.mag}  Def ${s.def}  Res ${s.res}`,
-      `Spd ${s.spd}  Move ${s.move}${moraleMove}  Jump ${s.jump}  Eva ${s.eva}`,
+      `Spd ${s.spd}  Mv ${s.move}${moraleMove}  Jmp ${s.jump}  Eva ${s.eva}`,
       mods ? `Effects: ${mods}` : '',
       this.vowLine(u),
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean);
   }
 
   /** Screen-space arrow for a world facing at the current rotation. */
@@ -739,18 +984,64 @@ export default class BattleScene extends Phaser.Scene {
     return `${vowName(v.vowId)} · ${t(`ui.sigil.${key}.label`)} · ${t(`ui.sigil.${key}.tooltip`, { progress, goal: v.goal })}`;
   }
 
+  /** Unit panel (UX §8): name in Pixelify 16, class, HP with a 60 x 5 bar, then CT, stats and the vow. */
+  private refreshUnitPanel(): void {
+    const a = activeUnit(this.state);
+    this.unitHpBar.clear();
+    if (!a) { for (const o of [this.unitTitle, this.unitClass, this.unitHp, this.unitBody]) o.setText(''); return; }
+    this.unitTitle.setText(a.name).setColor(a.team === 'player' ? BONE : '#e0876a');
+    this.unitClass.setText(a.team === 'player' ? this.className(a) : `Enemy · ${this.className(a)}`);
+    this.unitHp.setText(`HP ${a.hp}/${a.base.hp}`);
+    const bx = this.unitHp.x + this.unitHp.width + X(4);
+    const by = Math.round((this.unitHp.y + this.unitHp.height / 2) / LP - 2.5) * LP;
+    const frac = Math.max(0, a.hp / a.base.hp);
+    this.unitHpBar.fillStyle(MARK.edge, 1).fillRect(bx - X(1), by - X(1), X(62), X(7));
+    this.unitHpBar.fillStyle(0x3a3631, 1).fillRect(bx, by, X(60), X(5));
+    this.unitHpBar.fillStyle(a.team === 'player' ? FACTION.squadHp : FACTION.court, 1).fillRect(bx, by, X(Math.round(60 * frac)), X(5));
+    this.unitBody.setText(this.unitLines(a));
+  }
+
   private refreshPanels(preview: ActionPreview | null): void {
+    this.refreshUnitPanel();
     this.refreshTargetControls();
     const a = activeUnit(this.state);
-    this.unitPanel.setText(a ? this.unitSummary(a, a.team === 'player' ? '▶ ' : 'Enemy turn: ') : '');
-    if (preview) {
-      this.previewPanel.setText(this.previewText(preview));
-    } else if (this.movePv) {
-      this.previewPanel.setText(this.movePreviewText(this.movePv));
+    let v: PanelView;
+    if (preview) v = this.previewView(preview);
+    else if (this.movePv) {
+      const [head = '', ...lines] = this.movePreviewText(this.movePv).split('\n');
+      v = { head, lines };
     } else {
       const hu = this.hover ? occupant(this.state, this.hover) : this.hoverUnitId ? getUnit(this.state, this.hoverUnitId) : undefined;
-      this.previewPanel.setText(hu && hu.id !== a?.id ? this.unitSummary(hu, '') : this.tileInfo());
+      v = hu && hu.id !== a?.id ? { head: `${hu.name} · ${this.className(hu)}`, lines: [`HP ${hu.hp}/${hu.base.hp}`, ...this.unitLines(hu)] } : this.tileView();
     }
+    this.showPanel(v);
+  }
+
+  /** Target panel rows (UX §8): header, name row, hit and damage in Pixelify, HP after, then detail lines. */
+  private showPanel(v: PanelView): void {
+    const p = this.pv;
+    const { h: H } = screenLp();
+    const confirmOn = this.mode.kind === 'target' && !!this.mode.selected;
+    p.head.setText(v.head);
+    // Keep the header clear of the ◀ ▶ arrows.
+    while (p.head.width > X(124) && p.head.text.length > 3) p.head.setText(`${p.head.text.slice(0, -2)}…`);
+    let y = X(H - 74);
+    p.name.setText(v.name ?? '').setY(y);
+    if (v.name) y += X(9);
+    p.big.setText(v.big ?? '').setY(y - X(2));
+    if (v.big) y += X(15);
+    p.detail.setText(v.detail ?? '').setY(y);
+    // The HP-after value turns red-orange when the hit downs the target or leaves it under a third.
+    p.value.setText(v.value?.s ?? '').setColor(v.value?.warn ? '#c0533f' : COLORS.text).setPosition(p.detail.x + p.detail.width, y);
+    if (v.detail) y += X(9);
+    const stripY = confirmOn ? H - 39 : H - 21;
+    p.strip.setVisible(!!v.strip).setY(X(stripY));
+    p.stripText.setText(v.strip ?? '').setVisible(!!v.strip).setY(X(stripY + 5.5));
+    const bottom = X(v.strip ? stripY - 1 : confirmOn ? H - 27 : H - 10);
+    p.body.setY(y).setMaxLines(0).setText(v.lines.join('\n'));
+    const n = p.body.getWrappedText().length;
+    const lh = n ? p.body.height / n : X(9);
+    p.body.setMaxLines(Math.max(0, Math.floor((bottom - y) / lh)) || 1).setText(v.lines.join('\n')).setVisible(bottom - y >= lh);
   }
 
   /** Show Confirm only once a target is selected, and the arrows while there is more than one target. */
@@ -763,60 +1054,87 @@ export default class BattleScene extends Phaser.Scene {
       const who = occupant(this.state, sel);
       const label = `Confirm · ${abilityShort(m.abilityId)} → ${who ? shortName(who) : `tile ${sel.x},${sel.y}`}`;
       this.confirm.label.setText(label);
-      if (this.confirm.label.width > 356 - 36) this.confirm.label.setText(label.replace('Confirm · ', ''));
+      if (this.confirm.label.width > X(152)) this.confirm.label.setText(label.replace('Confirm · ', ''));
     }
-    for (const o of [this.confirm.bg, this.confirm.label, this.confirm.skin]) o?.setVisible(!!sel);
-    for (const a of this.targetArrows) a.setVisible(valid.length > 0).setAlpha(valid.length > 1 ? 1 : 0.35);
+    for (const o of [this.confirm.bg, this.confirm.label]) o.setVisible(!!sel);
+    for (const a of this.targetArrows) {
+      const on = valid.length > 0;
+      const many = valid.length > 1;
+      (a as Phaser.GameObjects.Image).setVisible(on).setAlpha(many ? 1 : 0.35);
+      (a.getData('glyph') as Phaser.GameObjects.Text | undefined)?.setVisible(on).setAlpha(many ? 1 : 0.35);
+    }
   }
 
-  /** "Target 2 / 4" for the preview header while targeting. */
+  /** "2 / 4" for the preview header while targeting. */
   private targetCount(): string {
     const u = activeUnit(this.state);
     if (this.mode.kind !== 'target' || !u) return '';
     const order = this.targetOrder(u, targetTiles(this.state, u, this.mode.abilityId));
     const cur = this.mode.selected ?? this.hover;
     const i = cur ? order.findIndex((p) => samePoint(p, cur)) : -1;
-    return i >= 0 ? `   Target ${i + 1} / ${order.length}` : '';
+    return i >= 0 ? `  ${i + 1} / ${order.length}` : '';
   }
 
-  private tileInfo(): string {
-    if (!this.hover) return '';
-    const t = tileAt(this.state.map, this.hover);
-    if (!t) return '';
-    const kind = t.kind === 'ground' ? 'Ground' : t.kind === 'ford' ? 'Ford (costs 2)' : t.kind === 'water' ? 'Water (impassable)' : 'Boulder (impassable)';
-    return `Tile ${this.hover.x},${this.hover.y}\n${kind}\nHeight ${t.height}`;
+  private tileView(): PanelView {
+    if (!this.hover) return { head: '', lines: [] };
+    const tile = tileAt(this.state.map, this.hover);
+    if (!tile) return { head: '', lines: [] };
+    const kind = tile.kind === 'ground' ? 'Ground' : tile.kind === 'ford' ? 'Ford (costs 2)' : tile.kind === 'water' ? 'Water (impassable)' : 'Boulder (impassable)';
+    return { head: `Tile ${this.hover.x},${this.hover.y}`, lines: [kind, `Height ${tile.height}`] };
   }
 
-  private previewText(p: ActionPreview): string {
-    const lines = [`${abilityLabel(p.abilityId)}${this.targetCount()}`];
+  private previewView(p: ActionPreview): PanelView {
+    const actor = getUnit(this.state, p.actorId);
+    const v: PanelView = { head: `${abilityLabel(p.abilityId)}${this.targetCount()}`, lines: [] };
     if (p.breaksVow) {
-      const actor = getUnit(this.state, p.actorId);
       const vow = this.state.vows[actor.id];
       const ally = this.state.units.find((o) => o.id !== actor.id && o.team === actor.team && o.status === 'ok' && Math.abs(o.pos.x - p.from.x) + Math.abs(o.pos.y - p.from.y) === 1);
-      lines.push(`⚠ ${t('ui.preview.breaksVow')}`);
-      if (vow && ally) lines.push(`  ${t('ui.preview.breaksVowDetail', { vow: vowName(vow.vowId), ally: ally.name })}`);
+      v.strip = `⚠ ${t('ui.preview.breaksVow')}${vow ? `: ${vowName(vow.vowId)}` : ''}`;
+      if (vow && ally) v.lines.push(t('ui.preview.breaksVowDetail', { vow: vowName(vow.vowId), ally: ally.name }));
     }
-    if (p.interceptedBy) lines.push(`Guarded: ${getUnit(this.state, p.interceptedBy).name} takes the hit`);
-    for (const v of p.victims) {
-      const u = getUnit(this.state, v.unitId);
-      const tags = [t(`ui.preview.${v.side}`), v.heightDiff > 0 ? `${t('ui.preview.highGround')} +${v.heightDiff}` : v.heightDiff < 0 ? `${t('ui.preview.lowGround')} ${v.heightDiff}` : ''].filter(Boolean).join(' · ');
-      if (v.heal || v.revives) {
-        lines.push(`${u.name}: ${v.revives ? 'REVIVE, ' : ''}heal ${v.heal}  HP ${u.hp} → ${v.hpAfter}`);
-      } else if (v.damage) {
-        lines.push(`${shortName(u) !== u.name ? `${shortName(u)} · ` : ''}${u.name}${u.team === getUnit(this.state, p.actorId).team ? ' (ally!)' : ''}`);
-        lines.push(`  ${t('ui.preview.hit')} ${v.hit}%   ${t('ui.preview.damage')} ${v.damage}   ${t('ui.preview.hpAfter')} ${u.hp} → ${v.hpAfter}${v.downs ? '  ☠' : ''}`);
-        lines.push(`  ${tags}${v.pushedTo ? ' · pushed' : ''}`);
-      } else {
-        lines.push(`${u.name}: ${describeEffect(p.abilityId)}`);
-      }
-    }
-    if (this.mode.kind === 'target' && !this.mode.selected) lines.push('', 'Click to select');
-    return lines.join('\n');
+    if (p.interceptedBy) v.lines.unshift(`Guarded: ${getUnit(this.state, p.interceptedBy).name} takes the hit`);
+    p.victims.forEach((x, i) => {
+      const u = getUnit(this.state, x.unitId);
+      const who = `${shortName(u) !== u.name ? `${shortName(u)} · ` : ''}${u.name}${x.damage && u.team === actor.team ? ' (ally!)' : ''}`;
+      const tags = [t(`ui.preview.${x.side}`), x.heightDiff > 0 ? `${t('ui.preview.highGround')} +${x.heightDiff}` : x.heightDiff < 0 ? `${t('ui.preview.lowGround')} ${x.heightDiff}` : ''].filter(Boolean).join(' · ');
+      if (i === 0 && (x.damage || x.heal || x.revives)) {
+        v.name = who;
+        if (x.heal || x.revives) {
+          v.big = `${x.revives ? 'Revive  ' : ''}Heal ${x.heal}`;
+          v.detail = `${t('ui.preview.hpAfter')} ${u.hp} → `;
+          v.value = { s: `${x.hpAfter}`, warn: false };
+        } else {
+          v.big = `${t('ui.preview.hit')} ${x.hit}%  ${t('ui.preview.damage')} ${x.damage}`;
+          v.detail = `${t('ui.preview.hpAfter')} ${u.hp} → `;
+          v.value = { s: `${x.hpAfter}${x.downs ? ' ☠' : ''}`, warn: x.downs || x.hpAfter < u.base.hp / 3 };
+          v.lines.unshift(`${tags}${x.pushedTo ? ' · pushed' : ''}`);
+        }
+      } else if (x.heal || x.revives) v.lines.push(`${u.name}: ${x.revives ? 'revive, ' : ''}heal ${x.heal}  HP ${u.hp} → ${x.hpAfter}`);
+      else if (x.damage) v.lines.push(`${who}: ${x.hit}% ${x.damage}  HP ${u.hp} → ${x.hpAfter}${x.downs ? ' ☠' : ''}`);
+      else v.lines.push(`${u.name}: ${describeEffect(p.abilityId)}`);
+    });
+    if (this.mode.kind === 'target' && !this.mode.selected) v.lines.push('Click to select');
+    return v;
   }
 
   private refreshUnits(): void {
     this.placedSigils = []; // sigils placed this pass count as obstacles for the next (QA #33 follow-up)
     for (const u of this.state.units) this.drawUnit(u);
+    this.liftHpBars();
+  }
+
+  /** Neighbouring HP bars that would overlap on screen: the unit further back lifts its bar 5 lp per clash. */
+  private liftHpBars(): void {
+    const live = this.state.units.filter((u) => u.status === 'ok' && this.views.get(u.id)?.sprite)
+      .sort((a, b) => depthOf(this.iso, b.pos.x, b.pos.y) - depthOf(this.iso, a.pos.x, a.pos.y));
+    const placed: Vec[] = [];
+    for (const u of live) {
+      const v = this.views.get(u.id)!;
+      let lift = 0;
+      while (lift > -60 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11)) lift -= 10;
+      v.hp.setY(lift);
+      placed.push({ x: v.root.x, y: v.root.y + lift });
+    }
   }
 
   /** Redraw tile highlights for the current mode and hover. */
@@ -979,7 +1297,7 @@ export default class BattleScene extends Phaser.Scene {
     else if (this.mode.kind === 'move') h = this.state.moved ? 'Choose an action, or End turn' : 'Click a blue tile to move, or choose an action';
     else if (this.mode.kind === 'target') h = this.mode.selected ? 'Click again or Enter to confirm. Tab for next target.' : 'Click a target to select it. Tab cycles targets. Right-click to cancel';
     else if (this.mode.kind === 'facing') h = 'Choose facing: click a gold tile or use arrow keys, Enter to confirm';
-    this.hint.setText(h);
+    this.setHint(h);
   }
 
   // ---------- input ----------
@@ -1025,10 +1343,12 @@ export default class BattleScene extends Phaser.Scene {
     });
     const kb = this.input.keyboard!;
     kb.on('keydown', (e: KeyboardEvent) => {
+      if (this.overlayKind) { if (e.key === 'Escape' || e.key === 'h' || e.key === 'H' || e.key === '?') this.closeOverlay(); return; }
+      if (e.key === 'h' || e.key === 'H' || e.key === '?') { this.openOverlay('help'); return; }
       if (e.key >= '1' && e.key <= '9') this.pressAction(Number(e.key) - 1);
       else if (e.key === 'w' || e.key === 'W') this.pressAction(this.buttons.findIndex((b) => b.id === 'wait'));
-      else if (e.key === 'Escape') this.cancel();
-      else if (e.key === 'm' || e.key === 'M') { toggleMute(this); this.volumeText?.setText(volumeLabel()); }
+      else if (e.key === 'Escape') { if (!this.cancel() && ['move', 'facing', 'deploy'].includes(this.mode.kind)) this.openOverlay('pause'); }
+      else if (e.key === 'm' || e.key === 'M') toggleMute(this);
       else if (e.key === 'd' || e.key === 'D') this.toggleDebug();
       else if (e.key === 'q' || e.key === 'Q') this.rotateView(-1);
       else if (e.key === 'e' || e.key === 'E') this.rotateView(1);
@@ -1067,7 +1387,7 @@ export default class BattleScene extends Phaser.Scene {
    * draws the HUD. Objects at depth 999 and above are HUD; everything else is board.
    */
   private setupCameras(): void {
-    fitCamera(this.cameras.main);
+    this.homeCamera();
     this.uiCam = this.cameras.add(0, 0, 1280, 720).setName('ui');
     fitCamera(this.uiCam);
     this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this);
@@ -1084,7 +1404,8 @@ export default class BattleScene extends Phaser.Scene {
   /** The whole-number scale changed (window resized): keep the board centre and the nearest zoom step. */
   private onRescale(): void {
     const main = this.cameras.main;
-    const centre = { x: main.scrollX + main.width / 2, y: main.scrollY + main.height / 2 };
+    // The canvas has already been resized, so use the size the camera had when it last rendered.
+    const centre = { x: main.scrollX + this.lastCamSize.w / 2, y: main.scrollY + this.lastCamSize.h / 2 };
     const was = main.zoom / this.lastLayoutScale;
     this.lastLayoutScale = layoutScale();
     const zs = mapZooms();
@@ -1092,10 +1413,41 @@ export default class BattleScene extends Phaser.Scene {
     fitCamera(main);
     main.setZoom(layoutScale() * z).centerOn(centre.x, centre.y);
     fitCamera(this.uiCam);
+    this.lastCamSize = { w: main.width, h: main.height };
     this.clampCamera();
+    // The logical screen changed size: lay the HUD out again on the new W x H (UX §8).
+    this.closeOverlay();
+    this.buildHud();
+    this.redrawDeploy?.();
+    this.refresh();
+  }
+
+  /** Map safe area centre in layout units (UX §8: y 50 to H - 117 lp); centring and pans aim here. */
+  private safeCentre(): Vec {
+    const { w: W, h: H } = screenLp();
+    return { x: X(W / 2), y: X((50 + H - 117) / 2) };
+  }
+
+  /** Camera scroll that puts world point w at the safe-area centre. */
+  private scrollToSafe(w: Vec): Vec {
+    const c = this.cameras.main;
+    const s = this.safeCentre();
+    const ls = layoutScale();
+    return { x: w.x - c.width / 2 - (s.x * ls - c.width / 2) / c.zoom, y: w.y - c.height / 2 - (s.y * ls - c.height / 2) / c.zoom };
+  }
+
+  /** Default framing: layout zoom, the map centre in the middle of the safe area. */
+  private homeCamera(): void {
+    const c = this.cameras.main;
+    fitCamera(c);
+    this.lastCamSize = { w: c.width, h: c.height };
+    const { width, height } = this.state.map;
+    const m = this.scrollToSafe(tileCenter(this.iso, (width - 1) / 2, (height - 1) / 2, 0));
+    c.setScroll(m.x, m.y);
   }
 
   private lastLayoutScale = layoutScale();
+  private lastCamSize = { w: canvasSize().width, h: canvasSize().height };
 
   private sortCameras(): void {
     for (const o of this.children.list) {
@@ -1109,10 +1461,11 @@ export default class BattleScene extends Phaser.Scene {
 
   /** True when the pointer is over the board area, not the timeline strip or the bottom panels. */
   private onBoard(p: Phaser.Input.Pointer): boolean {
-    const s = layoutScale(); // pointer is in canvas pixels; the HUD is laid out in 1280x720 units
+    const s = layoutScale() * LP; // pointer is in canvas pixels; the HUD is laid out in lp
     const x = p.x / s, y = p.y / s;
-    if (x >= 940 && y >= 484) return false; // camera control cluster
-    return y > 66 && y < 540;
+    const c = this.camRect;
+    if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) return false;
+    return y > 46 && y < screenLp().h - 96;
   }
 
   /** Zoom steps keep every art pixel a whole number of device pixels (src/view.ts, UX camera spec). */
@@ -1159,9 +1512,8 @@ export default class BattleScene extends Phaser.Scene {
     if (!u) return;
     const w = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
     const c = this.cameras.main;
-    // Centre on the board area (between the timeline and the panels), not the whole canvas.
-    const sx = w.x - c.width / 2;
-    const sy = w.y - 20 - c.height / 2 - (303 * layoutScale() - c.height / 2) / c.zoom;
+    // Centre on the map safe area (UX §8), not the whole canvas.
+    const { x: sx, y: sy } = this.scrollToSafe({ x: w.x, y: w.y - 20 });
     if (animate) this.tweens.add({ targets: c, scrollX: sx, scrollY: sy, duration: 300, ease: 'Sine.easeInOut' });
     else c.setScroll(sx, sy);
   }
@@ -1172,7 +1524,8 @@ export default class BattleScene extends Phaser.Scene {
     if (!u) return;
     const raw = this.toScreen(tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos)));
     const s = { x: raw.x / layoutScale(), y: raw.y / layoutScale() };
-    if (s.x < 120 || s.x > 1160 || s.y < 66 + 120 || s.y > 540 - 60) this.centerOnActive(true);
+    const { w: W, h: H } = screenLp();
+    if (s.x < 120 || s.x > X(W) - 120 || s.y < X(50) + 100 || s.y > X(H - 117) - 40) this.centerOnActive(true);
   }
 
   private zoomBy(f: number, at?: Phaser.Input.Pointer): void {
@@ -1192,7 +1545,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private resetCamera(): void {
-    fitCamera(this.cameras.main);
+    this.homeCamera();
     if ((this.iso.rot ?? 0) !== 0) this.rotateView(-(this.iso.rot ?? 0));
   }
 
@@ -1224,22 +1577,19 @@ export default class BattleScene extends Phaser.Scene {
 
   private drawCompass(): void {
     const g = this.compass;
-    if (!g) return;
-    const cx = 1270 - 24 - 6 * 44 - 10 + 22 + 44; // second slot
-    const cy = 514;
+    if (!g?.active) return;
+    const { x: cx, y: cy } = this.compassAt;
     const d = screenDir(this.iso, DIRS.N);
     const len = Math.hypot(d.x, d.y);
     const nx = d.x / len, ny = d.y / len;
+    const r = X(9);
     g.clear();
-    g.fillStyle(0x1f2937).fillCircle(cx, cy, 14).lineStyle(1, COLORS.panelEdge).strokeCircle(cx, cy, 14);
-    g.fillStyle(0xef4444).fillTriangle(cx + nx * 11, cy + ny * 11, cx - ny * 4, cy + nx * 4, cx + ny * 4, cy - nx * 4);
-    g.fillStyle(0x9ca3af).fillTriangle(cx - nx * 9, cy - ny * 9, cx - ny * 4, cy + nx * 4, cx + ny * 4, cy - nx * 4);
-    this.compassLabel?.setPosition(cx + nx * 18, cy + ny * 18);
+    g.fillStyle(MARK.edge).fillCircle(cx, cy, r + X(1)).fillStyle(0x3a3631).fillCircle(cx, cy, r);
+    g.fillStyle(0xc0533f).fillTriangle(cx + nx * X(7), cy + ny * X(7), cx - ny * X(2.5), cy + nx * X(2.5), cx + ny * X(2.5), cy - nx * X(2.5));
+    g.fillStyle(0xb9b2a2).fillTriangle(cx - nx * X(6), cy - ny * X(6), cx - ny * X(2.5), cy + nx * X(2.5), cx + ny * X(2.5), cy - nx * X(2.5));
+    this.compassLabel?.setPosition(cx + nx * X(13), cy + ny * X(12));
   }
   private compassLabel?: Phaser.GameObjects.Text;
-
-  /** Camera cluster, bottom right above the target panel (UX §2): Q, compass, E | −, +, C. */
-  private volumeText?: Phaser.GameObjects.Text;
 
   /** Dragon Regalia frame behind a HUD rectangle; the rectangle stays as the plain fallback (canvas renderer). */
   private skinPanel(r: Phaser.GameObjects.Rectangle): Phaser.GameObjects.NineSlice | null {
@@ -1271,44 +1621,6 @@ export default class BattleScene extends Phaser.Scene {
     const hovered = b.getData('state') === 'hover' || b.getData('state') === 'primary-hover';
     b.setData('base', state);
     setButtonState(b, hovered && state === 'rest' ? 'hover' : hovered && state === 'primary' ? 'primary-hover' : state);
-  }
-
-  /** Master volume: click cycles 100/60/30/off; M mutes. Remembered between visits. */
-  private drawVolumeButton(): void {
-    const bg = this.add.rectangle(8, 6, 96, 34, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-    this.skinButton(bg, 'rest');
-    this.volumeText = text(this, 56, 23, volumeLabel(), 14).setOrigin(0.5).setDepth(1001);
-    bg.on('pointerover', () => { const tip = lookup('ui.audio.tooltip'); this.hint.setText(typeof tip === 'string' ? tip : 'Volume: click to change, M to mute'); });
-    bg.on('pointerout', () => this.refreshHint());
-    bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
-      ev.stopPropagation();
-      cycleVolume(this);
-      this.volumeText!.setText(volumeLabel());
-      sfx(this, 'ui_click');
-    });
-  }
-
-  private drawCameraButtons(): void {
-    const x0 = 1270 - 24 - 6 * 44 - 10;
-    this.skinPanel(this.add.rectangle(x0 - 6, 484, 6 * 44 + 10 + 12, 60, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999));
-    const items: ([string, string, () => void] | null)[] = [
-      ['⟲', t('ui.camera.rotateLeft'), () => this.rotateView(-1)], null, ['⟳', t('ui.camera.rotateRight'), () => this.rotateView(1)],
-      ['−', `${t('ui.camera.zoomOut')} (-)`, () => this.zoomStep(-1)], ['+', `${t('ui.camera.zoomIn')} (+)`, () => this.zoomStep(1)], ['◎', t('ui.camera.center'), () => this.centerOnActive(true)],
-    ];
-    items.forEach((it, i) => {
-      if (!it) return;
-      const [label, tip, fn] = it;
-      const x = x0 + i * 44 + (i >= 3 ? 10 : 0);
-      const bg = this.add.rectangle(x, 494, 40, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-      text(this, x + 20, 514, label, 20).setOrigin(0.5).setDepth(1001);
-      bg.on('pointerover', () => this.hint.setText(tip));
-      bg.on('pointerout', () => this.refreshHint());
-      buttonSounds(this, bg);
-      bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); fn(); });
-    });
-    this.compass = this.add.graphics().setDepth(1000);
-    this.compassLabel = text(this, 0, 0, 'N', 10, '#ef4444').setOrigin(0.5).setDepth(1001);
-    this.drawCompass();
   }
 
   /** Units first (their bodies stand above the terrain), then tiles front to back. */
@@ -1391,10 +1703,11 @@ export default class BattleScene extends Phaser.Scene {
     const ls = layoutScale();
     const raw = this.toScreen(tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p)));
     const sx = raw.x / ls, sy = raw.y / ls;
-    if (sx > 80 && sx < 1200 && sy > 66 + 60 && sy < 540 - 30) return;
+    const { w: W, h: H } = screenLp();
+    if (sx > 80 && sx < X(W) - 80 && sy > X(50) + 60 && sy < X(H - 117) - 20) return;
     const c = this.cameras.main;
-    const w = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
-    this.tweens.add({ targets: c, scrollX: w.x - c.width / 2, scrollY: w.y - c.height / 2 - (303 * ls - c.height / 2) / c.zoom, duration: 150, ease: 'Sine.easeOut' });
+    const to = this.scrollToSafe(tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p)));
+    this.tweens.add({ targets: c, scrollX: to.x, scrollY: to.y, duration: 150, ease: 'Sine.easeOut' });
   }
 
   private pressAction(i: number): void {
@@ -1411,12 +1724,15 @@ export default class BattleScene extends Phaser.Scene {
     this.refresh();
   }
 
-  private cancel(): void {
+  /** Step back one level; false when there was nothing to step back from (Esc then opens the menu). */
+  private cancel(): boolean {
+    const was = this.mode;
     if (this.mode.kind === 'target' || (this.mode.kind === 'facing' && !this.state.acted)) sfx(this, 'ui_back');
     if (this.mode.kind === 'target' && this.mode.selected) this.mode = { kind: 'target', abilityId: this.mode.abilityId }; // back one step
     else if (this.mode.kind === 'target') this.mode = { kind: 'move' };
     else if (this.mode.kind === 'facing' && !this.state.acted) this.mode = { kind: 'move' };
     this.refresh();
+    return this.mode !== was;
   }
 
   private async clickTile(p: Point): Promise<void> {
@@ -1485,7 +1801,7 @@ export default class BattleScene extends Phaser.Scene {
         const g = this.overlays[p.y * this.state.map.width + p.x]!;
         g.fillStyle(COLORS.range, 0.45).fillPoints(topDiamond(this.iso, p.x, p.y, heightAt(this.state.map, p)), true);
       }
-      this.previewPanel.setText(this.previewText(preview));
+      this.showPanel(this.previewView(preview));
       await this.wait(700);
       await this.performAbility(u, plan.action.abilityId, plan.action.target);
       if (this.state.winner) return this.finish();
@@ -1567,7 +1883,7 @@ export default class BattleScene extends Phaser.Scene {
     for (; this.eventCursor < events.length; this.eventCursor++) {
       const e = events[this.eventCursor]!;
       const line = this.describe(e);
-      if (line) this.log.push(line);
+      if (line) { this.log.push(line); this.logTimes.push(this.time.now); }
       this.react(e);
       if (e.type === 'ability') {
         console.info('[oathbound] action', JSON.stringify({
@@ -1577,7 +1893,8 @@ export default class BattleScene extends Phaser.Scene {
       }
     }
     this.log = this.log.slice(-14);
-    this.logText.setText(this.log.join('\n'));
+    this.logTimes = this.logTimes.slice(-14);
+    this.renderLog();
   }
 
   // ---------- barks, oaths, reactions and banners (Writing's strings) ----------
@@ -1607,7 +1924,8 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private banner(s: string, color: string): void {
-    const b = text(this, 640, 300, s, 40, color).setOrigin(0.5).setDepth(2500).setStroke('#000000', 6).setAlpha(0);
+    const sc = this.safeCentre();
+    const b = text(this, sc.x, sc.y, s, 40, color).setOrigin(0.5).setDepth(2500).setStroke('#000000', 6).setAlpha(0);
     this.tweens.add({ targets: b, alpha: 1, duration: 200, yoyo: true, hold: 900, onComplete: () => b.destroy() });
   }
 
@@ -1679,7 +1997,7 @@ export default class BattleScene extends Phaser.Scene {
   private toggleDebug(): void {
     this.debug = !this.debug;
     this.debugText.setVisible(this.debug);
-    this.logText.setVisible(!this.debug);
+    this.renderLog();
     this.refresh();
   }
 
@@ -1711,7 +2029,10 @@ export default class BattleScene extends Phaser.Scene {
         const sx = (p.x - cam.scrollX - cam.width / 2) * cam.zoom + cam.width / 2;
         const sy = (p.y - cam.scrollY - cam.height / 2) * cam.zoom + cam.height / 2;
         const ls = layoutScale();
-        if (sy / ls > 66 && sy / ls < 540 && sx >= 0 && sx / ls <= 1280) {
+        const L = layoutSize();
+        const lx = sx / ls / LP, ly = sy / ls / LP, cr = this.camRect;
+        const inCam = lx >= cr.x && lx <= cr.x + cr.w && ly >= cr.y && ly <= cr.y + cr.h;
+        if (ly > 46 && ly < screenLp().h - 96 && sx >= 0 && sx / ls <= L.w && !inCam) {
           // Canvas pixels to page pixels (the canvas is shown at 1/devicePixelRatio and letterboxed).
           const r = this.game.canvas.getBoundingClientRect();
           return { x: r.left + (sx * r.width) / this.game.canvas.width, y: r.top + (sy * r.height) / this.game.canvas.height };
