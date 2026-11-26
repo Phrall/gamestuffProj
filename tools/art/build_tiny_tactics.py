@@ -94,4 +94,49 @@ for weapon in ('IronSword', 'IronAxe', 'WoodenStaff', 'Scepter'):
 shutil.copy(src('tinyTacticsTileset00.png'), os.path.join(out, 'tileset.png'))
 # Bow: Art asked for the No Outline set; Bow1 is plain wood.
 shutil.copy(os.path.join(packs, 'pixel-bow-pack', 'Single Files', 'No Outline', 'Bow1.png'), os.path.join(out, 'bow.png'))
+
+# ---------- Dragon Regalia GUI (Art: frames, buttons) ----------
+# The pack's fills are bright; the battle HUD is dark, so we keep the gold frames and swap the fills.
+gui = os.path.join(packs, 'dragon-regalia-gui')
+
+
+def gui_src(name):
+    hits = glob.glob(os.path.join(gui, '*' + name))
+    assert len(hits) == 1, name
+    return Image.open(hits[0]).convert('RGBA')
+
+
+def refill(im, swaps):
+    im = im.copy()
+    px = im.load()
+    for y in range(im.height):
+        for x in range(im.width):
+            r, g, b, a = px[x, y]
+            if a and (r, g, b) in swaps:
+                px[x, y] = (*swaps[(r, g, b)], a)
+    return im
+
+
+PANEL_FILL = (22, 24, 34)       # near COLORS.panel, a touch of the pack's navy
+PANEL_SHADE = (34, 34, 58)
+refill(gui_src('dragon9SlicesB.png'), {(67, 147, 214): PANEL_FILL, (69, 94, 177): PANEL_SHADE}).save(os.path.join(out, 'gui-panel.png'))
+
+button = gui_src('dragonButtonA-Sheet.png').crop((0, 0, 100, 35))
+for state, fill, shade in [
+    ('rest', (34, 38, 56), (26, 28, 44)),
+    ('hover', (52, 60, 92), (38, 42, 68)),
+    ('selected', (96, 66, 24), (70, 46, 20)),
+    ('disabled', (28, 30, 38), (22, 24, 30)),
+]:
+    im = refill(button, {(191, 91, 86): fill, (150, 68, 99): shade})
+    if state == 'disabled':  # dim the gold frame too
+        px = im.load()
+        for y in range(im.height):
+            for x in range(im.width):
+                r, g, b, a = px[x, y]
+                if a:
+                    v = int(0.3 * r + 0.59 * g + 0.11 * b)
+                    px[x, y] = ((v + 2 * 30) // 3, (v + 2 * 30) // 3, (v + 2 * 40) // 3, a)
+    im.save(os.path.join(out, f'gui-button-{state}.png'))
+
 print('ok', len(os.listdir(out)), 'files')

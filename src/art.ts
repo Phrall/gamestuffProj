@@ -26,6 +26,39 @@ export function preloadArt(scene: Phaser.Scene): void {
   for (const w of WEAPONS) for (const f of FACES) scene.load.spritesheet(`weapon-${w}${f}`, url(`weapon-${w}${f}`), { frameWidth: 48, frameHeight: 48 });
   scene.load.spritesheet('tileset', url('tileset'), { frameWidth: 32, frameHeight: 32 });
   scene.load.image('bow', url('bow'));
+  scene.load.image('gui-panel', url('gui-panel'));
+  for (const s of BUTTON_STATES) scene.load.image(`gui-button-${s}`, url(`gui-button-${s}`));
+}
+
+// ---------- Dragon Regalia GUI (tiopalada, CC0): gold frames, fills darkened by the build script ----------
+export const BUTTON_STATES = ['rest', 'hover', 'selected', 'disabled'] as const;
+export type ButtonState = (typeof BUTTON_STATES)[number];
+const PANEL_SLICE = 16;
+const BUTTON_SLICE = { x: 14, y: 9 };
+
+/** NineSlice only renders under WebGL; on the canvas renderer the HUD keeps its plain rectangles. */
+const guiOn = (scene: Phaser.Scene) => scene.game.renderer.type === Phaser.WEBGL && scene.textures.exists('gui-panel');
+
+/** A framed HUD panel (top-left origin), or null when the GUI art can't draw. */
+export function guiPanel(scene: Phaser.Scene, x: number, y: number, w: number, h: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-panel', undefined, w, h, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE).setOrigin(0);
+}
+
+/** A framed button background (top-left origin); switch its look with setButtonState. */
+export function guiButton(scene: Phaser.Scene, x: number, y: number, w: number, h: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  const b = scene.add.nineslice(x, y, 'gui-button-rest', undefined, w, h, BUTTON_SLICE.x, BUTTON_SLICE.x, BUTTON_SLICE.y, BUTTON_SLICE.y).setOrigin(0);
+  b.setData('state', 'rest');
+  return b;
+}
+
+export function setButtonState(b: Phaser.GameObjects.NineSlice, s: ButtonState): void {
+  if (b.getData('state') === s) return;
+  b.setData('state', s);
+  const { width, height } = b;
+  b.setTexture(`gui-button-${s}`);
+  b.setSlices(width, height, BUTTON_SLICE.x, BUTTON_SLICE.x, BUTTON_SLICE.y, BUTTON_SLICE.y);
 }
 
 const ART_KEYS = ['tileset', 'bow', 'fighter-attackSE', 'fighter_oc-attackSE', 'mage-attackSE', 'cleric_oc-attackSE'];
@@ -33,7 +66,7 @@ const ART_KEYS = ['tileset', 'bow', 'fighter-attackSE', 'fighter_oc-attackSE', '
 /** Crisp pixels for the art only (text and vector UI stay smooth), plus the walk and attack animations. */
 export function setupArt(scene: Phaser.Scene): void {
   for (const k of scene.textures.getTextureKeys()) {
-    if (k === 'tileset' || k === 'bow' || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
+    if (k === 'tileset' || k === 'bow' || k.startsWith('gui-') || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
       scene.textures.get(k).setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
   }
