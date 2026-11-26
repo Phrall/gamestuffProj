@@ -32,7 +32,7 @@ describe('spec sanity checks (§10)', () => {
     ]);
     expect(v0(flat, 'sw', 'strike', 1, 0).damage).toBe(9);
     expect(v0(flat, 'mg', 'spark', 1, 0).damage).toBe(10);
-    expect(v0(flat, 'bw', 'shoot', 7, 0).damage).toBe(9);
+    expect(v0(flat, 'bw', 'shoot', 7, 0).damage).toBe(9); // v1.9: Archer back to level 3, Def 2 (as v1.7)
     expect(v0(flat, 'sp', 'thrust', 0, 0).damage).toBe(7);
   });
 });

@@ -3,13 +3,19 @@ import { millFordSetup, parseMap } from '../src/data';
 import { facingToward, tileAt } from '../src/core/grid';
 
 describe('map parsing', () => {
-  it('reads Mill Ford heights, water, fords and boulders', () => {
+  it('reads Mill Ford heights, water, fords, bridges and boulders', () => {
     const { map } = millFordSetup();
     expect(map.width).toBe(10);
     expect(map.height).toBe(10);
     expect(tileAt(map, { x: 8, y: 0 })).toEqual({ kind: 'ground', height: 3 });
-    expect(tileAt(map, { x: 2, y: 4 })?.kind).toBe('ford');
-    expect(tileAt(map, { x: 0, y: 4 })?.kind).toBe('water');
+    // v1.8: the river is two rows deep, with a 2-wide bridge at x 2-3 and a 2-wide ford at x 6-7.
+    for (const y of [4, 5]) {
+      expect(tileAt(map, { x: 0, y })?.kind).toBe('water');
+      expect(tileAt(map, { x: 2, y })).toEqual({ kind: 'ground', height: 1, bridge: true });
+      expect(tileAt(map, { x: 3, y })?.bridge).toBe(true);
+      expect(tileAt(map, { x: 6, y })?.kind).toBe('ford');
+      expect(tileAt(map, { x: 7, y })?.kind).toBe('ford');
+    }
     expect(tileAt(map, { x: 6, y: 2 })?.kind).toBe('boulder');
     expect(tileAt(map, { x: 2, y: 7 })?.height).toBe(3);
   });

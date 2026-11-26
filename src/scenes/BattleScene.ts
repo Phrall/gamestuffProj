@@ -230,7 +230,7 @@ export default class BattleScene extends Phaser.Scene {
         const t = tileAt(map, { x, y })!;
         const d0 = depthOf(this.iso, x, y) * 10;
         if (this.art) {
-          this.drawTileArt(x, y, t.kind, t.height, d0);
+          this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0);
           this.overlays.push(this.add.graphics().setDepth(d0 + 1));
           continue;
         }
@@ -241,7 +241,7 @@ export default class BattleScene extends Phaser.Scene {
         const drop = t.height * this.iso.step + this.iso.step / 2;
         g.fillStyle(COLORS.tileLeft).fillPoints([w, s, { x: s.x, y: s.y + drop }, { x: w.x, y: w.y + drop }], true);
         g.fillStyle(COLORS.tileRight).fillPoints([s, e, { x: e.x, y: e.y + drop }, { x: s.x, y: s.y + drop }], true);
-        const topColor = t.kind === 'water' ? COLORS.water : t.kind === 'ford' ? COLORS.ford : COLORS.tileTop[Math.min(t.height, 3)]!;
+        const topColor = t.kind === 'water' ? COLORS.water : t.kind === 'ford' || t.bridge ? COLORS.ford : COLORS.tileTop[Math.min(t.height, 3)]!;
         g.fillStyle(topColor).fillPoints(top, true);
         g.lineStyle(1, 0x000000, 0.35).strokePoints([n, e, s, w], true);
         if (t.kind === 'boulder') {
@@ -263,14 +263,16 @@ export default class BattleScene extends Phaser.Scene {
     const left = c.x - this.iso.tileW / 2;
     const surfaceTop = c.y - this.iso.tileH / 2; // top corner of this tile's top diamond
     let side = 8 * (h + 1); // art px of side wall, as in the pixel-v1 drafts (h0 shows one half step)
-    const top = kind === 'water' ? [TILE.waterFull, TILE.waterHalf] : kind === 'ford' ? [TILE.bridgeHalf, TILE.bridgeHalf] : [TILE.grassFull, TILE.grassHalf];
+    // v1.8: the bridge (map B) is plank on water; the ford is a half step of bare earth, so it never reads as water.
+    const top = kind === 'water' ? [TILE.waterFull, TILE.waterHalf] : kind === 'ford' ? [TILE.dirtHalf, TILE.dirtHalf] : kind === 'bridge' ? [TILE.bridgeHalf, TILE.bridgeHalf] : [TILE.grassFull, TILE.grassHalf];
+    const below = kind === 'bridge' ? [TILE.waterFull, TILE.waterHalf] : [TILE.dirtFull, TILE.dirtHalf];
     // Top block first, then dirt down to the base; drawn bottom-up so upper blocks cover lower ones.
     const blocks: { frame: number; full: boolean; offset: number }[] = [];
     let offset = 0;
     let first = true;
     while (side > 0) {
-      const full = side >= 16 && !(first && kind === 'ford');
-      const frame = first ? (full ? top[0]! : top[1]!) : full ? TILE.dirtFull : TILE.dirtHalf;
+      const full = side >= 16 && !(first && (kind === 'ford' || kind === 'bridge'));
+      const frame = first ? (full ? top[0]! : top[1]!) : full ? below[0]! : below[1]!;
       blocks.push({ frame, full, offset });
       const step = full ? 16 : 8;
       offset += step;
@@ -656,7 +658,7 @@ export default class BattleScene extends Phaser.Scene {
     if (!this.hover) return '';
     const t = tileAt(this.state.map, this.hover);
     if (!t) return '';
-    const kind = t.kind === 'ground' ? 'Ground' : t.kind === 'ford' ? 'Ford (costs 2)' : t.kind === 'water' ? 'Water (impassable)' : 'Boulder (impassable)';
+    const kind = t.bridge ? 'Bridge' : t.kind === 'ground' ? 'Ground' : t.kind === 'ford' ? 'Ford (costs 2)' : t.kind === 'water' ? 'Water (impassable)' : 'Boulder (impassable)';
     return `Tile ${this.hover.x},${this.hover.y}\n${kind}\nHeight ${t.height}`;
   }
 
