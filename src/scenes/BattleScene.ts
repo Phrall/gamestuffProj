@@ -677,7 +677,12 @@ export default class BattleScene extends Phaser.Scene {
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
         ev.stopPropagation();
         if (u.status === 'lost') return;
-        if (this.mode.kind === 'target') { void this.clickTile(u.pos); return; } // select, then confirm (UX §3)
+        // In targeting a chip only selects (UX §3); it never confirms, even on the current selection (QA #43).
+        if (this.mode.kind === 'target') {
+          const a = activeUnit(this.state);
+          if (a && targetTiles(this.state, a, this.mode.abilityId).some((p) => samePoint(p, u.pos))) this.selectTarget(u.pos, true);
+          return;
+        }
         this.setHover({ ...u.pos });
         this.panTo(u.pos);
       });
@@ -797,6 +802,22 @@ export default class BattleScene extends Phaser.Scene {
       if (vow && ally) lines.push(`  ${t('ui.preview.breaksVowDetail', { vow: vowName(vow.vowId), ally: ally.name })}`);
     }
     if (p.interceptedBy) lines.push(`Guarded: ${getUnit(this.state, p.interceptedBy).name} takes the hit`);
+    // An area hit lists one line per unit, allies first, so the ally line is never pushed under Confirm (QA #43).
+    if (p.victims.length > 1) {
+      const actorTeam = getUnit(this.state, p.actorId).team;
+      const name = (u: Unit) => (shortName(u) !== u.name ? shortName(u) : u.name);
+      const vs = [...p.victims].sort((a, b) => Number(getUnit(this.state, b.unitId).team === actorTeam) - Number(getUnit(this.state, a.unitId).team === actorTeam));
+      lines.push(`Hits: ${vs.map((v) => { const u = getUnit(this.state, v.unitId); return `${name(u)}${u.team === actorTeam && v.damage ? ' (ally)' : ''}`; }).join(', ')}`);
+      for (const v of vs) {
+        const u = getUnit(this.state, v.unitId);
+        const ally = u.team === actorTeam && v.damage ? '⚠ ' : '';
+        if (v.heal || v.revives) lines.push(`${name(u)}: ${v.revives ? 'revive, ' : ''}heal ${v.heal}  HP ${u.hp} → ${v.hpAfter}`);
+        else if (v.damage) lines.push(`${ally}${name(u)}: ${v.hit}%  ${v.damage} dmg  HP ${u.hp} → ${v.hpAfter}${v.downs ? ' ☠' : ''}`);
+        else lines.push(`${name(u)}: ${describeEffect(p.abilityId)}`);
+      }
+      if (this.mode.kind === 'target' && !this.mode.selected) lines.push('Click to select');
+      return lines.join('\n');
+    }
     for (const v of p.victims) {
       const u = getUnit(this.state, v.unitId);
       const tags = [t(`ui.preview.${v.side}`), v.heightDiff > 0 ? `${t('ui.preview.highGround')} +${v.heightDiff}` : v.heightDiff < 0 ? `${t('ui.preview.lowGround')} ${v.heightDiff}` : ''].filter(Boolean).join(' · ');
