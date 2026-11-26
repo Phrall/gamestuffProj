@@ -10,7 +10,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 
 PX = 128
 GLYPHS = {
-    '→': ['..#..', '...#.', '#####', '...#.', '..#..'],
+    '→': ['...#.', '#####', '...#.'],  # 3-row head (Art)
     '▶': ['#..', '##.', '###', '##.', '#..'],
     '◀': ['..#', '.##', '###', '.##', '..#'],
     '▼': ['#####', '.###.', '..#..'],
@@ -29,7 +29,7 @@ GLYPHS = {
     '≥': ['#....', '.##..', '...##', '.##..', '#....', '#####'],
 }
 # Vertical placement: rows sit on the baseline unless listed (▼/▲ centred on the x-height).
-LIFT = {'▼': 1, '▲': 1}
+LIFT = {'▼': 1, '▲': 1, '→': 1}
 
 
 def glyph(rows, lift):
