@@ -15,6 +15,7 @@ import { COLORS, FONT } from './theme';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
+import { ART_SCALE, hasArt, idleFrame, unitKind } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
@@ -36,6 +37,10 @@ interface UnitView {
   outline: Phaser.GameObjects.Graphics;
   /** Sigil layer above every unit, so a sigil and its leader line are never hidden by a token in front. */
   sigilRoot: Phaser.GameObjects.Container;
+  /** Art's pixel sprite (null in gray-box mode). */
+  sprite: Phaser.GameObjects.Sprite | null;
+  /** Small team-coloured name badge shown with the sprite. */
+  badge: Phaser.GameObjects.Text | null;
 }
 
 // Captain is "Cp" so it never reads as Calla's "C" (QA #27).
@@ -78,7 +83,7 @@ export default class BattleScene extends Phaser.Scene {
   private hover: Point | null = null;
   private hoverUnitId: string | null = null;
   private debug = false;
-  private mapGfx: Phaser.GameObjects.Graphics[] = [];
+  private mapGfx: (Phaser.GameObjects.Graphics | Phaser.GameObjects.Image)[] = [];
   private barkRand: () => number = Math.random;
   private lastBarkAt: Record<string, number> = {};
   private wasShaken = false;
@@ -129,8 +134,17 @@ export default class BattleScene extends Phaser.Scene {
     this.movePv = null;
     this.chips = [];
 
+    this.art = hasArt(this);
     this.setupCameras();
     this.drawMap();
+    if (this.art) {
+      // Stream loop: water 4 frames, ford 2 (Art's pixel-v1).
+      let tick = 0;
+      this.time.addEvent({ delay: 250, loop: true, callback: () => {
+        tick++;
+        for (const w of this.waterImgs) w.img.setFrame(`${w.base}${tick % w.frames}`);
+      } });
+    }
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
     this.drawUi();
     this.drawCameraButtons();
@@ -217,10 +231,16 @@ export default class BattleScene extends Phaser.Scene {
     for (const g of this.overlays) g.destroy();
     this.mapGfx = [];
     this.overlays = [];
+    this.waterImgs = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const t = tileAt(map, { x, y })!;
         const d0 = depthOf(this.iso, x, y) * 10;
+        if (this.art) {
+          this.drawTileArt(x, y, t.kind, t.height, d0);
+          this.overlays.push(this.add.graphics().setDepth(d0 + 1));
+          continue;
+        }
         const g = this.add.graphics().setDepth(d0);
         this.mapGfx.push(g);
         const top = topDiamond(this.iso, x, y, t.height);
@@ -240,6 +260,29 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
+  private art = false;
+  private waterImgs: { img: Phaser.GameObjects.Image; base: string; frames: number }[] = [];
+
+  /** One tile from Art's sheet: frames are bottom-aligned, 32x48 art px, drawn at 2x. */
+  private drawTileArt(x: number, y: number, kind: string, h: number, depth: number): void {
+    const c0 = tileCenter(this.iso, x, y, 0);
+    const left = c0.x - this.iso.tileW / 2;
+    const top = c0.y - this.iso.tileH / 2 - 26 * ART_SCALE;
+    // The stream art runs along screen down-right; after a 90° or 270° turn use the down-left set.
+    const ySet = (this.iso.rot ?? 0) % 2 === 1 ? '_y' : '';
+    const variant = (x * 7 + y * 13) % 3;
+    const frame = kind === 'water' ? `water${ySet}_f0` : kind === 'ford' ? `ford${ySet}_f0` : `grass_h${Math.min(h, 3)}_v${variant}`;
+    const img = this.add.image(left, top, 'tiles', frame).setOrigin(0).setScale(ART_SCALE).setDepth(depth);
+    this.mapGfx.push(img);
+    if (kind === 'water' || kind === 'ford') this.waterImgs.push({ img, base: `${kind}${ySet}_f`, frames: kind === 'water' ? 4 : 2 });
+    if (kind === 'boulder') {
+      const c = tileCenter(this.iso, x, y, h);
+      const prop = this.add.image(c.x - this.iso.tileW / 2, c.y - this.iso.tileH / 2 - 16 * ART_SCALE, 'props', `boulder_v${(x + y) % 2}`)
+        .setOrigin(0).setScale(ART_SCALE).setDepth(depth + 0.5);
+      this.mapGfx.push(prop);
+    }
+  }
+
   private makeUnitView(u: Unit): UnitView {
     const root = this.add.container(0, 0);
     const body = this.add.graphics();
@@ -249,9 +292,20 @@ export default class BattleScene extends Phaser.Scene {
     const sigil = this.add.graphics();
     const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
     root.add([nub, body, glyph, hp]);
+    let sprite: Phaser.GameObjects.Sprite | null = null;
+    let badge: Phaser.GameObjects.Text | null = null;
+    if (this.art) {
+      // Feet at the bottom centre of the 32x32 cell, 1 art px below the tile centre.
+      sprite = this.add.sprite(0, 2, 'units', `unit_${unitKind(u)}_se_idle0`).setOrigin(0.5, 1).setScale(ART_SCALE);
+      badge = text(this, 13, -6, glyphFor(u), 10, '#ffffff').setOrigin(0.5).setPadding(2, 0, 2, 0)
+        .setBackgroundColor(u.team === 'player' ? '#1d4ed8' : '#b91c1c');
+      root.addAt(sprite, 1);
+      root.add(badge);
+      glyph.setVisible(false);
+    }
     const outline = this.add.graphics().setDepth(898);
     const sigilRoot = this.add.container(0, 0, [sigil, sigilText]).setDepth(899);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot };
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, badge };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -271,7 +325,15 @@ export default class BattleScene extends Phaser.Scene {
       // Death animation (#20): sink and fade out over ~400 ms, then leave the board.
       v.outline.clear();
       if (v.root.visible && !this.tweens.isTweening(v.root)) {
-        this.tweens.add({ targets: v.root, alpha: 0, y: v.root.y + 10, duration: 400, delay: 250, onComplete: () => v.root.setVisible(false) });
+        if (v.sprite) {
+          // Art's death strip: frames 0-5 at ~10 fps, fading out over the last two (pixel-v1 README).
+          const kind = unitKind(u);
+          v.body.clear(); v.hp.clear(); v.nub.clear(); v.badge?.setVisible(false);
+          for (let i = 0; i < 6; i++) this.time.delayedCall(i * 100, () => v.sprite!.setFrame(`unit_${kind}_se_death${i}`));
+          this.tweens.add({ targets: v.root, alpha: 0, duration: 400, delay: 400, onComplete: () => v.root.setVisible(false) });
+        } else {
+          this.tweens.add({ targets: v.root, alpha: 0, y: v.root.y + 10, duration: 400, delay: 250, onComplete: () => v.root.setVisible(false) });
+        }
       }
       return;
     }
@@ -284,7 +346,20 @@ export default class BattleScene extends Phaser.Scene {
     const active = this.state.activeId === u.id;
     const lit = this.hoverUnitId === u.id;
     v.body.clear();
-    if (u.status === 'downed') {
+    if (v.sprite) {
+      // Art sprite: a team-coloured ring at the feet (gold when active), the right facing frame, and the badge.
+      const kind = unitKind(u);
+      v.body.fillStyle(color, 0.35).fillEllipse(0, 0, 40, 18);
+      v.body.lineStyle(active || lit ? 3 : 2, active ? COLORS.gold : lit ? COLORS.hover : color, 1).strokeEllipse(0, 0, 40, 18);
+      if (u.status === 'downed') {
+        v.sprite.setFrame(`unit_${kind}_downed`).setFlipX(false);
+        v.badge?.setText('☠').setY(-4);
+      } else {
+        const f = idleFrame(kind, screenDir(this.iso, DIRS[u.facing]));
+        v.sprite.setFrame(f.frame).setFlipX(f.flip);
+        v.badge?.setText(glyphFor(u)).setY(-6);
+      }
+    } else if (u.status === 'downed') {
       v.body.fillStyle(color).fillEllipse(0, -4, 30, 12);
       v.glyph.setY(-4).setText('☠');
     } else {
@@ -293,7 +368,7 @@ export default class BattleScene extends Phaser.Scene {
       v.glyph.setY(-20).setText(glyphFor(u));
     }
     v.nub.clear();
-    if (u.status === 'ok') {
+    if (u.status === 'ok' && !v.sprite) {
       const d = screenDir(this.iso, DIRS[u.facing]);
       v.nub.fillStyle(0xffffff, 0.9).fillTriangle(d.x * 22, d.y * 22, d.x * 10 - d.y * 8, d.y * 10 + d.x * 4, d.x * 10 + d.y * 8, d.y * 10 - d.x * 4);
     }
@@ -301,8 +376,9 @@ export default class BattleScene extends Phaser.Scene {
     v.hp.clear();
     if (u.status !== 'ok') return;
     const frac = Math.max(0, u.hp / u.base.hp);
-    v.hp.fillStyle(0x000000, 0.7).fillRect(-15, -46, 30, 5);
-    v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, -46, 30 * frac, 5);
+    const hy = v.sprite ? -50 : -46;
+    v.hp.fillStyle(0x000000, 0.7).fillRect(-15, hy, 30, 5);
+    v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, hy, 30 * frac, 5);
   }
 
   /** Sigil boxes placed in the current refresh, in world space. */
