@@ -127,6 +127,8 @@ for state, fill, shade in [
     ('hover', (52, 60, 92), (38, 42, 68)),
     ('selected', (96, 66, 24), (70, 46, 20)),
     ('disabled', (28, 30, 38), (22, 24, 30)),
+    ('primary', (237, 230, 211), (200, 190, 166)),        # bone: the one button that commits (UX: Confirm)
+    ('primary-hover', (250, 246, 234), (222, 214, 192)),
 ]:
     im = refill(button, {(191, 91, 86): fill, (150, 68, 99): shade})
     if state == 'disabled':  # dim the gold frame too

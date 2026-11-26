@@ -31,7 +31,7 @@ export function preloadArt(scene: Phaser.Scene): void {
 }
 
 // ---------- Dragon Regalia GUI (tiopalada, CC0): gold frames, fills darkened by the build script ----------
-export const BUTTON_STATES = ['rest', 'hover', 'selected', 'disabled'] as const;
+export const BUTTON_STATES = ['rest', 'hover', 'selected', 'disabled', 'primary', 'primary-hover'] as const;
 export type ButtonState = (typeof BUTTON_STATES)[number];
 const PANEL_SLICE = 16;
 const BUTTON_SLICE = { x: 14, y: 9 };
