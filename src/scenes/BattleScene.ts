@@ -15,7 +15,7 @@ import { COLORS, FACTION, FONT } from './theme';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
-import { ART_SCALE, TILE, face, hasArt, unitLook } from '../art';
+import { ART_SCALE, TILE, face, guiButton, guiPanel, hasArt, setButtonState, unitLook, type ButtonState } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
@@ -105,7 +105,7 @@ export default class BattleScene extends Phaser.Scene {
   private hint!: Phaser.GameObjects.Text;
   private logText!: Phaser.GameObjects.Text;
   private debugText!: Phaser.GameObjects.Text;
-  private buttons: { id: string; bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }[] = [];
+  private buttons: { id: string; bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; skin: Phaser.GameObjects.NineSlice | null }[] = [];
   private log: string[] = [];
   private eventCursor = 0;
 
@@ -163,7 +163,9 @@ export default class BattleScene extends Phaser.Scene {
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
       const add = <T extends Phaser.GameObjects.GameObject>(o: T) => { this.deployUi.push(o); return o; };
-      add(this.add.rectangle(330, 122, 620, 460, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      const frame = add(this.add.rectangle(330, 122, 620, 460, COLORS.panel, 0.96).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(3000));
+      const framed = this.skinPanel(frame);
+      if (framed) add(framed);
       add(text(this, 640, 140, t('ui.deploy.title'), 24, '#f5c451').setOrigin(0.5, 0).setDepth(3001));
       add(text(this, 640, 174, t('ui.deploy.subtitle'), 13, COLORS.textDim).setOrigin(0.5, 0).setDepth(3001));
       const chosen = [...new Set(Object.values(this.vowChoice).filter((v): v is VowId => !!v))];
@@ -176,7 +178,9 @@ export default class BattleScene extends Phaser.Scene {
         add(text(this, 360, y + 8, `${u.name.padEnd(7)} ${CLASSES[u.classId!]!.name}`, 16).setDepth(3001));
         const btn = add(this.add.rectangle(600, y, 320, 36, choice ? 0x3b2f12 : 0x1f2937).setOrigin(0).setStrokeStyle(1, choice ? COLORS.gold : COLORS.panelEdge).setDepth(3001).setInteractive({ useHandCursor: true }));
         const label = choice ? `${vowName(choice)}: ${t(`ui.vows.${choice}.progress`, vowParams(choice, 0))}` : t('ui.deploy.noVow');
-        add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
+        const skin = this.skinButton(btn, choice ? 'selected' : 'rest');
+        if (skin) add(skin);
+        add(text(this, 622, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
           this.vowChoice[u.id] = order[(order.indexOf(choice) + 1) % order.length]!;
@@ -185,6 +189,8 @@ export default class BattleScene extends Phaser.Scene {
         });
       });
       const go = add(this.add.rectangle(540, 524, 200, 40, 0x14532d).setOrigin(0).setStrokeStyle(2, 0x4ade80).setDepth(3001).setInteractive({ useHandCursor: true }));
+      const goSkin = this.skinButton(go, 'selected');
+      if (goSkin) add(goSkin);
       add(text(this, 640, 544, t('ui.deploy.begin'), 18).setOrigin(0.5).setDepth(3002));
       buttonSounds(this, go);
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
@@ -502,7 +508,7 @@ export default class BattleScene extends Phaser.Scene {
     // Left column, in place of the log, so it never covers the map (QA #14).
     this.debugText = text(this, 8, 96, '', 10, '#a7f3d0').setDepth(1001).setBackgroundColor('#000000cc').setVisible(false);
 
-    const panel = (x: number, w: number) => this.add.rectangle(x, 548, w, 162, COLORS.panel).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
+    const panel = (x: number, w: number) => this.skinPanel(this.add.rectangle(x, 548, w, 162, COLORS.panel).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999));
     panel(10, 380);
     panel(400, 480);
     panel(890, 380);
@@ -510,12 +516,12 @@ export default class BattleScene extends Phaser.Scene {
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
     // Key hints, split so each stays inside its own panel (QA #27).
-    text(this, 22, 702, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
-    text(this, 412, 702, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 22, 696, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 412, 696, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
   }
 
   private rebuildButtons(): void {
-    for (const b of this.buttons) { b.bg.destroy(); b.label.destroy(); }
+    for (const b of this.buttons) { b.bg.destroy(); b.label.destroy(); b.skin?.destroy(); }
     this.buttons = [];
     const u = activeUnit(this.state);
     if (!u || u.team !== 'player') return;
@@ -527,14 +533,15 @@ export default class BattleScene extends Phaser.Scene {
       const x = 412 + col * 156;
       const y = 560 + row * 48;
       const bg = this.add.rectangle(x, y, 148, 40, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-      const label = text(this, x + 10, y + 11, '', 14).setDepth(1001);
+      const skin = this.skinButton(bg, 'rest');
+      const label = text(this, x + 18, y + 11, '', 14).setDepth(1001);
       bg.on('pointerover', () => sfx(this, 'ui_hover'));
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.pressAction(i); });
       if (id !== 'wait') {
         bg.on('pointerover', () => this.hint.setText(`${abilityLabel(id)}: ${t(`ui.abilities.${id}.tooltip`, abilityParams(id, effectiveStats(this.state, u).mag))}`));
         bg.on('pointerout', () => this.refreshHint());
       }
-      this.buttons.push({ id, bg, label });
+      this.buttons.push({ id, bg, label, skin });
     });
     this.refreshButtons();
   }
@@ -546,14 +553,19 @@ export default class BattleScene extends Phaser.Scene {
       let suffix = '';
       if (b.id !== 'wait' && u) {
         const cd = u.cooldowns[b.id] ?? 0;
-        if (cd > 0) suffix = ` (${cd})`;
-        if (u.usedOnce.includes(b.id)) suffix = ' (used)';
+        if (cd > 0) suffix = ` ·${cd}`;
+        if (u.usedOnce.includes(b.id)) suffix = ' ·used';
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
       b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
-      b.label.setColor(enabled ? COLORS.text : '#4b5563');
-      b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
+      b.label.setColor(enabled ? COLORS.text : '#4b5563').setFontSize(14);
+      // Keep long labels ("Aimed Shot ·2", "Volley (used)") inside the frame's ornaments (QA #40).
+      // Left padding is 18 px and the right ornament ~18 px: the label must fit in width - 36.
+      if (b.label.width > b.bg.width - 36) b.label.setFontSize(12);
+      if (b.label.width > b.bg.width - 36) b.label.setFontSize(11);
+      if (b.skin) this.setSkin(b.skin, selected ? 'selected' : enabled ? 'rest' : 'disabled');
+      else b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
   }
 
@@ -1061,10 +1073,39 @@ export default class BattleScene extends Phaser.Scene {
   /** Camera cluster, bottom right above the target panel (UX §2): Q, compass, E | −, +, C. */
   private volumeText?: Phaser.GameObjects.Text;
 
+  /** Dragon Regalia frame behind a HUD rectangle; the rectangle stays as the plain fallback (canvas renderer). */
+  private skinPanel(r: Phaser.GameObjects.Rectangle): Phaser.GameObjects.NineSlice | null {
+    const p = guiPanel(this, r.x, r.y, r.width, r.height);
+    if (!p) return null;
+    p.setDepth(r.depth);
+    r.setVisible(false);
+    return p;
+  }
+
+  /** Dragon Regalia button under an interactive rectangle, which keeps the input but stops drawing. Hover lights it. */
+  private skinButton(r: Phaser.GameObjects.Rectangle, state: ButtonState): Phaser.GameObjects.NineSlice | null {
+    const b = guiButton(this, r.x, r.y, r.width, r.height);
+    if (!b) return null;
+    b.setDepth(r.depth);
+    r.setFillStyle(0x000000, 0).setStrokeStyle();
+    this.setSkin(b, state);
+    r.on('pointerover', () => { if (b.getData('base') === 'rest') setButtonState(b, 'hover'); });
+    r.on('pointerout', () => setButtonState(b, b.getData('base') as ButtonState));
+    r.once('destroy', () => b.destroy());
+    return b;
+  }
+
+  private setSkin(b: Phaser.GameObjects.NineSlice, state: ButtonState): void {
+    const hovered = b.getData('state') === 'hover';
+    b.setData('base', state);
+    setButtonState(b, hovered && state === 'rest' ? 'hover' : state);
+  }
+
   /** Master volume: click cycles 100/60/30/off; M mutes. Remembered between visits. */
   private drawVolumeButton(): void {
-    const bg = this.add.rectangle(10, 8, 84, 30, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
-    this.volumeText = text(this, 52, 23, volumeLabel(), 14).setOrigin(0.5).setDepth(1001);
+    const bg = this.add.rectangle(8, 6, 96, 34, 0x1f2937).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(1000).setInteractive({ useHandCursor: true });
+    this.skinButton(bg, 'rest');
+    this.volumeText = text(this, 56, 23, volumeLabel(), 14).setOrigin(0.5).setDepth(1001);
     bg.on('pointerover', () => { const tip = lookup('ui.audio.tooltip'); this.hint.setText(typeof tip === 'string' ? tip : 'Volume: click to change, M to mute'); });
     bg.on('pointerout', () => this.refreshHint());
     bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
@@ -1077,7 +1118,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private drawCameraButtons(): void {
     const x0 = 1270 - 24 - 6 * 44 - 10;
-    this.add.rectangle(x0 - 6, 488, 6 * 44 + 10 + 12, 52, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999);
+    this.skinPanel(this.add.rectangle(x0 - 6, 484, 6 * 44 + 10 + 12, 60, COLORS.panel, 0.92).setOrigin(0).setStrokeStyle(1, COLORS.panelEdge).setDepth(999));
     const items: ([string, string, () => void] | null)[] = [
       ['⟲', t('ui.camera.rotateLeft'), () => this.rotateView(-1)], null, ['⟳', t('ui.camera.rotateRight'), () => this.rotateView(1)],
       ['−', `${t('ui.camera.zoomOut')} (-)`, () => this.zoomStep(-1)], ['+', `${t('ui.camera.zoomIn')} (+)`, () => this.zoomStep(1)], ['◎', t('ui.camera.center'), () => this.centerOnActive(true)],
