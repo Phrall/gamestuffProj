@@ -24,7 +24,10 @@ export const COLORS = {
   textWarn: '#f87171',
 };
 
-export const FONT = 'monospace';
+export { BODY as FONT } from '../fonts';
 
 /** Faction cue (Director): one ring colour per side, darker than the move and attack highlights. */
-export const FACTION = { squad: 0x4f7fa8, squadHex: '#4f7fa8', court: 0xa3333d, courtHex: '#a3333d' } as const;
+export const FACTION = { squad: 0x3b6a96, squadHex: '#3b6a96', court: 0xa33a26, courtHex: '#a33a26', edge: 0x1f1e1b, badgeText: '#ede6d3', squadHp: 0x3b82c4 } as const;
+
+/** Outline colours from the UX readability pass (§4): every outline is 2 lp of colour with a 1 lp dark edge. */
+export const MARK = { bone: 0xede6d3, target: 0xc0533f, area: 0xe0876a, edge: 0x1f1e1b } as const;
