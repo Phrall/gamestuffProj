@@ -1,5 +1,5 @@
 {
-  "version": "1.7",
+  "version": "1.9",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -419,15 +419,16 @@
       "W": "water (impassable)",
       "F": "ford (height 0, cost 2)",
       "X": "boulder (impassable)",
-      "0-3": "height"
+      "0-3": "height",
+      "B": "bridge (height 1, cost 1)"
     },
     "rows": [
       "2 2 2 1 1 1 1 2 3 3",
       "2 2 1 1 1 1 1 2 3 3",
       "1 1 1 1 0 0 X 1 2 2",
       "1 1 0 0 0 0 0 1 1 1",
-      "W W F W W W W F W W",
-      "0 0 0 0 0 0 0 0 0 0",
+      "W W B B W W F F W W",
+      "W W B B W W F F W W",
       "0 1 1 0 0 0 0 1 2 2",
       "1 2 3 1 X 0 1 1 2 1",
       "1 2 2 1 0 0 0 1 1 1",
@@ -527,7 +528,7 @@
       "name": "Calla",
       "class": "hedgeMage",
       "pos": [
-        5,
+        3,
         9
       ],
       "facing": "N",
@@ -613,7 +614,7 @@
       ],
       "facing": "S",
       "stats": {
-        "hp": 24,
+        "hp": 26,
         "atk": 7,
         "mag": 1,
         "def": 4,
@@ -627,7 +628,7 @@
         "thrust"
       ],
       "statClass": "courtSpearman",
-      "level": 3,
+      "level": 4,
       "hitBonus": 2
     },
     {

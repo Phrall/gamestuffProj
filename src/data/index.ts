@@ -73,6 +73,7 @@ export function parseMap(m: { id: string; name: string; width: number; height: n
       if (c === 'W') tiles.push({ kind: 'water', height: 0 });
       else if (c === 'X') tiles.push({ kind: 'boulder', height: 0 });
       else if (c === 'F') tiles.push({ kind: 'ford', height: 0 });
+      else if (c === 'B') tiles.push({ kind: 'ground', height: 1, bridge: true });
       else {
         const h = Number(c);
         if (!Number.isInteger(h)) throw new Error(`map ${m.id}: bad cell "${c}"`);

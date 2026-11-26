@@ -13,6 +13,8 @@ export interface Tile {
   kind: TileKind;
   /** Height in levels, 0 to 3. */
   height: number;
+  /** Drawn as a bridge (map code B); plays as ordinary ground. */
+  bridge?: boolean;
 }
 
 export interface GridMap {

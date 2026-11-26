@@ -27,9 +27,10 @@ describe('stats from class, level, attributes and gear (§19)', () => {
 
   it('battle start uses the derived stats', () => {
     const s = createBattle(millFordSetup(), 1);
-    expect(getUnit(s, 'spearB').hp).toBe(24);
+    expect(getUnit(s, 'spearB').hp).toBe(26); // v1.9: level 4
     expect(getUnit(s, 'spearA').hp).toBe(26);
-    expect(getUnit(s, 'archerA').base.eva).toBe(15);
+    expect(getUnit(s, 'archerA').base.eva).toBe(15); // v1.9: back to level 3
+    expect(getUnit(s, 'archerA').hp).toBe(20);
     expect(getUnit(s, 'calla').base.eva).toBe(6);
   });
 
