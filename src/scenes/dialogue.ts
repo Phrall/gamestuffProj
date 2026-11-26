@@ -24,7 +24,7 @@ export function playDialogue(scene: Phaser.Scene, lines: Line[], done: () => voi
     const l = lines[i]!;
     const name = l.speaker === 'narrator' ? '' : (t(`speakers.${l.speaker}`) || unitName(l.speaker));
     who.setText(name);
-    body.setText(l.text).setFontStyle(l.speaker === 'narrator' ? 'italic' : 'normal').setColor(l.speaker === 'narrator' ? COLORS.textDim : COLORS.text);
+    body.setText(l.text).setColor(l.speaker === 'narrator' ? COLORS.textDim : COLORS.text);
     console.info('[oathbound] line', l.id);
   };
   const end = () => {
