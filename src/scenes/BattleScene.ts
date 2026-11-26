@@ -387,7 +387,8 @@ export default class BattleScene extends Phaser.Scene {
     };
     const spans: [number, number][] = u.team === 'player'
       ? [[0, Math.PI * 2]]
-      : [0, 1, 2, 3].map((q) => [q * (Math.PI / 2) + 0.22, (q + 1) * (Math.PI / 2) - 0.22]); // gaps at E, S, W, N
+      // Gaps at E, S, W, N. The ellipse is flat, so the E/W gaps need a wider angle to show the same size.
+      : [0, 1, 2, 3].map((q) => [q * (Math.PI / 2) + (q % 2 ? 0.25 : 0.55), (q + 1) * (Math.PI / 2) - (q % 2 ? 0.55 : 0.25)]);
     for (const [a0, a1] of spans) arc(a0, a1, 8, MARK.edge);
     for (const [a0, a1] of spans) arc(a0, a1, 4, col);
     if (u.status !== 'ok') return;
@@ -865,7 +866,7 @@ export default class BattleScene extends Phaser.Scene {
     if (u && u.team === 'player') {
       if (this.mode.kind === 'move' && !this.state.moved) {
         const tree = pathTree(this.state, u);
-        for (const n of reachableTiles(this.state, u)) paint(n.pos, COLORS.move, 0.45);
+        for (const n of reachableTiles(this.state, u)) paint(n.pos, COLORS.move, 0.55); // UX: 55% so the pale blue survives the bright pack grass
         if (this.hover && tree.has(key(this.hover)) && !occupant(this.state, this.hover)) {
           for (const p of pathTo(tree, this.hover)) paint(p, COLORS.move, 0.55);
         }
@@ -891,14 +892,16 @@ export default class BattleScene extends Phaser.Scene {
         const a = ABILITIES[this.mode.abilityId]!;
         for (let y = 0; y < this.state.map.height; y++) {
           for (let x = 0; x < this.state.map.width; x++) {
-            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) paint({ x, y }, COLORS.range, 0.3);
+            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) paint({ x, y }, COLORS.range, 0.18); // attack range stays faint: red over the pack grass turns olive above ~20%
           }
         }
         const valid = targetTiles(this.state, u, this.mode.abilityId);
         for (const p of valid) paint(p, COLORS.target, 0.9, true);
         const aim = this.mode.selected ?? (this.hover && valid.some((p) => samePoint(p, this.hover!)) ? this.hover : null);
         if (aim) {
-          for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim)) paint(p, MARK.area, 0.45);
+          const area = a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim);
+          // Single-tile abilities show only the target outline; the area fill is for real areas (UX §4).
+          if (area.length > 1 || !this.mode.selected) for (const p of area) paint(p, MARK.area, 0.45);
           if (this.mode.selected) mark(this.mode.selected, MARK.target, true);
           preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
