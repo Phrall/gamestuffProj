@@ -84,6 +84,9 @@ const X = (v: number): number => v * LP;
 const DARK = '#1f1e1b';
 const BONE = '#ede6d3';
 
+/** dragonCursorTarget palette (Art, #47): its navy drop edge and the five frame colours the target pulses through. */
+const CURSOR = { edge: 0x131549, pulse: [0xf7eddc, 0xf4a13a, 0xf4a13a, 0xf9d42f, 0xf8dfa6] } as const;
+
 /** What the target panel shows (UX §8). */
 interface PanelView { head: string; name?: string; big?: string; detail?: string; value?: { s: string; warn: boolean }; lines: string[]; strip?: string }
 
@@ -104,6 +107,8 @@ export default class BattleScene extends Phaser.Scene {
   private lastBarkAt: Record<string, number> = {};
   private wasShaken = false;
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
+  /** Pulsing outline on the confirmed target (Art: the cursor sheet's colours, code-drawn). */
+  private targetMark!: Phaser.GameObjects.Graphics;
   private sorted = new WeakSet<Phaser.GameObjects.GameObject>();
   private drag: { x: number; y: number; moved: boolean; button: number } | null = null;
   private compass!: Phaser.GameObjects.Graphics;
@@ -167,6 +172,7 @@ export default class BattleScene extends Phaser.Scene {
     this.setupCameras();
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
+    this.targetMark = this.add.graphics();
     this.hudObjs = [];
     this.overlay = [];
     this.overlayKind = null;
@@ -439,6 +445,11 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   update(time: number): void {
+    const draw = this.targetMark?.getData('draw') as ((c: number) => void) | null;
+    if (draw) {
+      const f = Math.floor(time / 125) % CURSOR.pulse.length; // ~8 fps
+      if (this.targetMark.getData('frame') !== f) { this.targetMark.setData('frame', f); draw(CURSOR.pulse[f]!); }
+    }
     const bob = Math.floor(time / 400) % 2 ? -2 : 0; // active ▼: 2 frames, 400 ms (UX §4)
     for (const v of this.views.values()) {
       this.syncSilhouette(v);
@@ -1203,6 +1214,7 @@ export default class BattleScene extends Phaser.Scene {
   /** Redraw tile highlights for the current mode and hover. */
   private refreshOverlays(): ActionPreview | null {
     for (const g of this.overlays) g.clear();
+    this.targetMark.clear().setData('draw', null).setData('frame', -1);
     this.movePv = null;
     const u = activeUnit(this.state);
     let preview: ActionPreview | null = null;
@@ -1214,11 +1226,13 @@ export default class BattleScene extends Phaser.Scene {
       else g.fillStyle(color, alpha).fillPoints(d, true);
     };
     /** UX §4: 2 lp of colour with a 1 lp dark edge (1 lp = 2 layout units at map zoom 1). */
-    const mark = (p: Point, color: number, brackets = false) => {
-      const g = this.overlays[p.y * this.state.map.width + p.x];
+    const mark = (p: Point, color: number, brackets = false, into?: Phaser.GameObjects.Graphics) => {
+      const g = into ?? this.overlays[p.y * this.state.map.width + p.x];
       if (!g) return;
       const d = topDiamond(this.iso, p.x, p.y, heightAt(this.state.map, p));
-      g.lineStyle(8, MARK.edge, 1).strokePoints(d, true);
+      // Same family as the GUI frames (Art): the cursor sheet's navy drop edge, 1 lp lower, under a 2 lp line.
+      const drop = d.map((q) => ({ x: q.x, y: q.y + 2 }));
+      g.lineStyle(8, CURSOR.edge, 1).strokePoints(drop, true);
       g.lineStyle(4, color, 1).strokePoints(d, true);
       if (!brackets) return;
       // Four corner brackets just outside the diamond, 3 lp along each edge.
@@ -1228,7 +1242,7 @@ export default class BattleScene extends Phaser.Scene {
         for (const n of [d[(i + 1) % 4]!, d[(i + 3) % 4]!]) {
           const len = Math.hypot(n.x - v.x, n.y - v.y);
           const e = { x: out.x + ((n.x - v.x) / len) * 12, y: out.y + ((n.y - v.y) / len) * 12 };
-          g.lineStyle(8, MARK.edge, 1).lineBetween(out.x, out.y, e.x, e.y);
+          g.lineStyle(8, CURSOR.edge, 1).lineBetween(out.x, out.y + 2, e.x, e.y + 2);
           g.lineStyle(4, color, 1).lineBetween(out.x, out.y, e.x, e.y);
         }
       }
@@ -1283,7 +1297,11 @@ export default class BattleScene extends Phaser.Scene {
           const area = a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim);
           // Single-tile abilities show only the target outline; the area fill is for real areas (UX §4).
           if (area.length > 1 || !this.mode.selected) for (const p of area) paint(p, MARK.area, 0.45);
-          if (this.mode.selected) mark(this.mode.selected, MARK.target, true);
+          if (this.mode.selected) {
+            // The confirmed target pulses through the cursor sheet's frame colours (Art, #47); see update().
+            const sp = this.mode.selected;
+            this.targetMark.setDepth(depthOf(this.iso, sp.x, sp.y) * 10 + 2).setData('draw', (c: number) => { this.targetMark.clear(); mark(sp, c, true, this.targetMark); });
+          }
           preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
       } else if (this.mode.kind === 'facing') {
