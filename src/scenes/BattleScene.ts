@@ -96,6 +96,8 @@ const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, c
 
 /** Bone edge on rings and the move range boundary (UX v2.2). */
 const BONE_EDGE = 0xede6d3;
+/** Range fills (UX v2.4, agreed with Art). */
+const RANGE = { move: 0x9fc3d6, attack: 0xc0533f, area: 0xe0876a } as const;
 
 /** Mill Ford decoration from Art's layout (tiles64/src/preview64.py). Props don't block anything. */
 const MILL_FORD_PROPS: Record<string, string> = {
@@ -421,7 +423,9 @@ export default class BattleScene extends Phaser.Scene {
   private placeUnit(u: Unit, p: Point, view = this.views.get(u.id)): void {
     if (!view) return;
     const c = tileCenter(this.iso, p.x, p.y, this.drawH(p));
-    view.root.setPosition(c.x, c.y).setDepth(depthOf(this.iso, p.x, p.y) * 10 + 5);
+    // A unit that higher ground in front could cover draws above that ground (UX v2.2 §7), with a bone outline.
+    const front = this.frontDepth(p);
+    view.root.setPosition(c.x, c.y).setDepth(front === depthOf(this.iso, p.x, p.y) * 10 ? front + 5 : front + 3);
     view.outline.setPosition(c.x, c.y);
     view.sigilRoot.setPosition(c.x, c.y);
   }
@@ -519,7 +523,7 @@ export default class BattleScene extends Phaser.Scene {
     v.outline.clear();
     const edge = u.team === 'player' ? COLORS.player : COLORS.enemy;
     // Occlusion outline (UX §2), only when higher ground in front can hide the unit (QA #44), sized to the token.
-    if (!v.sprite || this.hiddenByTerrain(u.pos)) {
+    if (!v.sprite) {
       const h = this.tokenH;
       if (u.status === 'downed') v.outline.lineStyle(2, edge, 0.6).strokeEllipse(0, -4, 30, 12);
       else v.outline.lineStyle(2, edge, 0.45).strokeRoundedRect(-16, -h, 32, h - 2, 5);
@@ -536,7 +540,7 @@ export default class BattleScene extends Phaser.Scene {
       // Sprite outline (UX §4): the selected target in red-orange wins over hover in bone.
       const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
       const targeted = !!sel && samePoint(sel, u.pos);
-      const tint = targeted ? MARK.target : lit || active ? MARK.bone : null;
+      const tint = targeted ? MARK.target : lit || active || this.hiddenByTerrain(u.pos) ? MARK.bone : null;
       // UX v2.2: 1 px outline on hover, 2 px on the active unit and the selected target.
       const wide = targeted || active;
       v.silhouette.forEach((s, i) => s.setVisible(tint !== null && u.status === 'ok' && (i < 4 || wide)).setTintFill(tint ?? 0xffffff));
@@ -577,6 +581,22 @@ export default class BattleScene extends Phaser.Scene {
     }
     v.hp.fillStyle(0x000000, 0.7).fillRect(-15, hy, 30, 5);
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, hy, 30 * frac, 5);
+  }
+
+  /**
+   * Depth base for things on p that must stay visible: above any higher tile in front that can cover p
+   * (its terrain, bridge, props and overlay), but below units standing on that tile.
+   */
+  private frontDepth(p: Point): number {
+    const d = depthOf(this.iso, p.x, p.y);
+    const h = heightAt(this.state.map, p);
+    let best = d * 10;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      const dq = depthOf(this.iso, q.x, q.y);
+      if ((dx || dy) && Math.abs(dx) + Math.abs(dy) <= 2 && tileAt(this.state.map, q) && dq > d && heightAt(this.state.map, q) > h) best = Math.max(best, dq * 10 + 1);
+    }
+    return best;
   }
 
   /** True when a tile drawn in front of p (within 2 tiles) stands higher, so it can cover a unit on p. */
@@ -657,8 +677,8 @@ export default class BattleScene extends Phaser.Scene {
       // Art's sigil set: the frame carries the state (frozen has its pause bars); only progress is drawn here.
       const key = frozen ? 'frozen' : vow.status === 'fulfilled' ? 'kept' : vow.status === 'broken' ? 'broken' : dim ? 'lapsed' : held ? 'held' : 'intact';
       if (u.status === 'ok' && (x !== 0 || y < -(this.tokenH + 27))) {
-        v.sigil.lineStyle(3, MARK.edge, 1).lineBetween(x, y + 13, 0, -this.tokenH);
-        v.sigil.lineStyle(1, color, 1).lineBetween(x, y + 13, 0, -this.tokenH);
+        v.sigil.lineStyle(4, MARK.edge, 1).lineBetween(x, y + 13, 0, -this.tokenH);
+        v.sigil.lineStyle(2, color, 1).lineBetween(x, y + 13, 0, -this.tokenH);
       }
       v.sigilImg.setVisible(true).setFrame(`sigil_${key}`).setPosition(x, y);
       v.sigilText.setText('');
@@ -1294,12 +1314,18 @@ export default class BattleScene extends Phaser.Scene {
     const live = this.state.units.filter((u) => u.status === 'ok' && this.views.get(u.id)?.sprite)
       .sort((a, b) => depthOf(this.iso, b.pos.x, b.pos.y) - depthOf(this.iso, a.pos.x, a.pos.y));
     const placed: Vec[] = [];
+    // The active unit's tile mark and ring (64x32 diamond) also count as taken (UX review of #49).
+    const act = activeUnit(this.state);
+    const av = act && act.status === 'ok' ? this.views.get(act.id) : undefined;
+    const bar = -(this.tokenH - 1);
+    const hits = (u: Unit, x: number, y: number) => placed.some((p) => Math.abs(p.x - x) < 46 && Math.abs(p.y - y) < 10)
+      || (!!av && act!.id !== u.id && Math.abs(av.root.x - x) < 32 + 21 && y + bar + 8 > av.root.y - 18 && y + bar - 1 < av.root.y + 18);
     for (const u of live) {
       const v = this.views.get(u.id)!;
       let lift = 0;
-      while (lift > -20 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 10)) lift -= 10;
+      while (lift > -20 && hits(u, v.root.x, v.root.y + lift)) lift -= 10;
       // Two lifts at most (UX): past that the back bar only shows on hover, or for the active unit or target.
-      const clash = lift <= -20 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 10);
+      const clash = lift <= -20 && hits(u, v.root.x, v.root.y + lift);
       const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
       const keep = this.hoverUnitId === u.id || samePoint(this.hover ?? { x: -1, y: -1 }, u.pos) || this.state.activeId === u.id || (!!sel && samePoint(sel, u.pos));
       v.hp.setY(clash ? -20 : lift).setVisible(!clash || keep);
@@ -1322,6 +1348,8 @@ export default class BattleScene extends Phaser.Scene {
       if (stroke) g.lineStyle(width, color, alpha).strokePoints(d, true);
       else g.fillStyle(color, alpha).fillPoints(d, true);
     };
+    /** Range tiles (UX v2.4): fill plus a 1 px per-tile outline at 60%. */
+    const range = (p: Point, color: number, alpha: number) => { paint(p, color, alpha); paint(p, color, 0.6, true, 1); };
     /** UX §4: 2 lp of colour with a 1 lp dark edge (1 lp = 2 layout units at map zoom 1). */
     const mark = (p: Point, color: number, brackets = false, into?: Phaser.GameObjects.Graphics) => {
       const g = into ?? this.overlays[p.y * this.state.map.width + p.x];
@@ -1360,10 +1388,10 @@ export default class BattleScene extends Phaser.Scene {
       if (this.mode.kind === 'move' && !this.state.moved) {
         const tree = pathTree(this.state, u);
         const reach = reachableTiles(this.state, u);
-        for (const n of reach) paint(n.pos, COLORS.move, 0.55); // UX: 55% so the pale blue survives the bright pack grass
+        for (const n of reach) range(n.pos, RANGE.move, 0.45);
         this.rangeEdge(reach.map((n) => n.pos).concat([u.pos]));
         if (this.hover && tree.has(key(this.hover)) && !occupant(this.state, this.hover)) {
-          for (const p of pathTo(tree, this.hover)) paint(p, COLORS.move, 0.55);
+          for (const p of pathTo(tree, this.hover)) paint(p, RANGE.move, 0.45);
         }
         // Move preview (#21): from a reachable tile, or the unit's own tile ("stay and attack").
         const h = this.hover;
@@ -1385,22 +1413,24 @@ export default class BattleScene extends Phaser.Scene {
       }
       if (this.mode.kind === 'target') {
         const a = ABILITIES[this.mode.abilityId]!;
+        const reach: Point[] = [];
         for (let y = 0; y < this.state.map.height; y++) {
           for (let x = 0; x < this.state.map.width; x++) {
-            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) paint({ x, y }, COLORS.range, 0.18); // attack range stays faint: red over the pack grass turns olive above ~20%
+            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) { range({ x, y }, RANGE.attack, 0.35); reach.push({ x, y }); }
           }
         }
+        this.rangeEdge(reach);
         const valid = targetTiles(this.state, u, this.mode.abilityId);
         for (const p of valid) paint(p, COLORS.target, 0.9, true);
         const aim = this.mode.selected ?? (this.hover && valid.some((p) => samePoint(p, this.hover!)) ? this.hover : null);
         if (aim) {
           const area = a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim);
           // Single-tile abilities show only the target outline; the area fill is for real areas (UX §4).
-          if (area.length > 1 || !this.mode.selected) for (const p of area) paint(p, MARK.area, 0.45);
+          if (area.length > 1 || !this.mode.selected) { for (const p of area) range(p, RANGE.area, 0.35); this.rangeEdge(area); }
           if (this.mode.selected) {
             // The confirmed target pulses through the cursor sheet's frame colours (Art, #47); see update().
             const sp = this.mode.selected;
-            this.targetMark.setDepth(depthOf(this.iso, sp.x, sp.y) * 10 + 2).setData('draw', (c: number) => { this.targetMark.clear(); mark(sp, c, true, this.targetMark); });
+            this.targetMark.setDepth(this.frontDepth(sp) + 2).setData('draw', (c: number) => { this.targetMark.clear(); mark(sp, c, true, this.targetMark); });
           }
           preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
@@ -1627,14 +1657,26 @@ export default class BattleScene extends Phaser.Scene {
     return { x: w.x - c.width / 2 - (s.x * ls - c.width / 2) / c.zoom, y: w.y - c.height / 2 - (s.y * ls - c.height / 2) / c.zoom };
   }
 
+  /** Middle of the drawn map: from the highest tile top to the bottom of the level -1 slabs, at this rotation. */
+  private mapMiddle(): Vec {
+    const { width, height } = this.state.map;
+    let t = Infinity, b = -Infinity, l = Infinity, r = -Infinity;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const top = tileCenter(this.iso, x, y, Math.max(0, this.drawH({ x, y })));
+      const low = tileCenter(this.iso, x, y, -1);
+      t = Math.min(t, top.y - this.iso.tileH / 2); b = Math.max(b, low.y + this.iso.tileH / 2 + this.iso.step);
+      l = Math.min(l, top.x - this.iso.tileW / 2); r = Math.max(r, top.x + this.iso.tileW / 2);
+    }
+    return { x: (l + r) / 2, y: (t + b) / 2 };
+  }
+
   /** Default framing: layout zoom, the map centre in the middle of the safe area. */
   private homeCamera(): void {
     const c = this.cameras.main;
     fitCamera(c);
     c.setZoom(layoutScale() * mapHome());
     this.lastCamSize = { w: c.width, h: c.height };
-    const { width, height } = this.state.map;
-    const m = this.scrollToSafe(tileCenter(this.iso, (width - 1) / 2, (height - 1) / 2, 0));
+    const m = this.scrollToSafe(this.mapMiddle());
     c.setScroll(m.x, m.y);
   }
 
@@ -2000,7 +2042,7 @@ export default class BattleScene extends Phaser.Scene {
       const preview = previewAction(this.state, u, plan.action.abilityId, plan.action.target);
       for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, plan.action.target)) {
         const g = this.overlays[p.y * this.state.map.width + p.x]!;
-        g.fillStyle(COLORS.range, 0.45).fillPoints(topDiamond(this.iso, p.x, p.y, this.drawH(p)), true);
+        g.fillStyle(RANGE.area, 0.35).fillPoints(topDiamond(this.iso, p.x, p.y, this.drawH(p)), true);
       }
       this.showPanel(this.previewView(preview));
       await this.wait(700);
