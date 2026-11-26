@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { pixelFont } from './fonts';
 
 /**
  * Pixel-perfect view (Director, Jen's 1440p playtest; UX readability pass §1).
@@ -75,7 +76,14 @@ export function mapZooms(): number[] {
 export function installCrispText(): void {
   const proto = Phaser.GameObjects.GameObjectFactory.prototype as unknown as { text: (...a: unknown[]) => Phaser.GameObjects.Text };
   const orig = proto.text;
-  proto.text = function (this: unknown, ...a: unknown[]) { return crispText(orig.apply(this, a)); };
+  proto.text = function (this: unknown, ...a: unknown[]) {
+    // Every text goes onto the pixel-font scale (Tiny5 8 lp / Pixelify 16 lp), whatever size the caller asked for.
+    const style = { ...((a[3] as Phaser.Types.GameObjects.Text.TextStyle | undefined) ?? {}) };
+    const asked = parseInt(String(style.fontSize ?? '16'), 10) || 16;
+    Object.assign(style, pixelFont(asked));
+    a[3] = style;
+    return crispText(orig.apply(this, a));
+  };
 }
 
 /** Standard fit for a scene with one camera: fit now and again whenever the scale changes. */

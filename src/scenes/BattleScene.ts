@@ -647,11 +647,11 @@ export default class BattleScene extends Phaser.Scene {
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
       b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
-      b.label.setColor(enabled ? COLORS.text : '#4b5563').setFontSize(14);
+      b.label.setColor(enabled ? COLORS.text : '#4b5563');
       // Keep long labels ("Aimed Shot ·2", "Volley (used)") inside the frame's ornaments (QA #40).
       // Left padding is 18 px and the right ornament ~18 px: the label must fit in width - 36.
-      if (b.label.width > b.bg.width - 36) b.label.setFontSize(12);
-      if (b.label.width > b.bg.width - 36) b.label.setFontSize(11);
+      // Pixel fonts only come in whole sizes, so a long label drops the key number instead of shrinking.
+      if (b.label.width > b.bg.width - 36) b.label.setText(b.label.text.replace(/^\d /, ''));
       if (b.skin) this.setSkin(b.skin, selected ? 'selected' : enabled ? 'rest' : 'disabled');
       else b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
@@ -767,8 +767,8 @@ export default class BattleScene extends Phaser.Scene {
     if (sel && m.kind === 'target') {
       const who = occupant(this.state, sel);
       const label = `Confirm · ${abilityShort(m.abilityId)} → ${who ? shortName(who) : `tile ${sel.x},${sel.y}`}`;
-      this.confirm.label.setText(label).setFontSize(14);
-      if (this.confirm.label.width > 356 - 36) this.confirm.label.setFontSize(12);
+      this.confirm.label.setText(label);
+      if (this.confirm.label.width > 356 - 36) this.confirm.label.setText(label.replace('Confirm · ', ''));
     }
     for (const o of [this.confirm.bg, this.confirm.label, this.confirm.skin]) o?.setVisible(!!sel);
     for (const a of this.targetArrows) a.setVisible(valid.length > 0).setAlpha(valid.length > 1 ? 1 : 0.35);
