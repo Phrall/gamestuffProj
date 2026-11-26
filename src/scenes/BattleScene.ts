@@ -1216,9 +1216,9 @@ export default class BattleScene extends Phaser.Scene {
     for (const u of live) {
       const v = this.views.get(u.id)!;
       let lift = 0;
-      while (lift > -30 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11)) lift -= 10;
+      while (lift > -20 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 10)) lift -= 10;
       // Two lifts at most (UX): past that the back bar only shows on hover, or for the active unit or target.
-      const clash = lift <= -30 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11);
+      const clash = lift <= -20 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 10);
       const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
       const keep = this.hoverUnitId === u.id || samePoint(this.hover ?? { x: -1, y: -1 }, u.pos) || this.state.activeId === u.id || (!!sel && samePoint(sel, u.pos));
       v.hp.setY(clash ? -20 : lift).setVisible(!clash || keep);
