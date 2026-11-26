@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitScene, layoutSize } from '../view';
 import type { BattleState } from '../core/battle';
 import { teamMorale } from '../core/stats';
 import { reckonVows } from '../core/vows';
@@ -14,7 +15,8 @@ export default class ResultsScene extends Phaser.Scene {
 
   create(data: { state: BattleState }): void {
     const s = data.state;
-    const { width } = this.scale;
+    fitScene(this);
+    const width = layoutSize().w;
     const won = s.winner === 'player';
     this.add.text(width / 2, 70, (won ? t('ui.banner.victory') : t('ui.banner.defeat')).toUpperCase(), { fontFamily: FONT, fontSize: '52px', color: won ? '#f5c451' : '#f87171' }).setOrigin(0.5);
     this.add.text(width / 2, 122, `${t('ui.reckoning.title')} · ${t('ui.reckoning.subtitle')}`, { fontFamily: FONT, fontSize: '16px', color: '#e5e7eb' }).setOrigin(0.5);
