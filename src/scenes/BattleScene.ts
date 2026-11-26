@@ -50,6 +50,8 @@ interface UnitView {
   sigilImg: Phaser.GameObjects.Image | null;
   /** ▼ over the head: bone for the active unit (bobbing), red-orange for the selected target. */
   marker: Phaser.GameObjects.Graphics;
+  /** Ring and ▼: these stay visible above higher ground in front (UX v2.2 §7); the body and its outline stay depth-sorted. */
+  over: Phaser.GameObjects.Container;
 }
 
 // Captain is "Cp" so it never reads as Calla's "C" (QA #27).
@@ -415,7 +417,10 @@ export default class BattleScene extends Phaser.Scene {
     const sigilPips = this.add.graphics();
     const sigilRoot = this.add.container(0, 0, [sigil, ...(sigilImg ? [sigilImg] : []), sigilPips, sigilText]).setDepth(899);
     sigilRoot.setData('pips', sigilPips);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, weapon, badge, silhouette, sigilImg, marker };
+    const over = this.add.container(0, 0);
+    // Outline copies stay with the body (they hide with it); the ring and ▼ move to the over layer.
+    if (this.art) { root.remove([body, marker]); over.add([body, marker]); }
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, weapon, badge, silhouette, sigilImg, marker, over };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -423,9 +428,12 @@ export default class BattleScene extends Phaser.Scene {
   private placeUnit(u: Unit, p: Point, view = this.views.get(u.id)): void {
     if (!view) return;
     const c = tileCenter(this.iso, p.x, p.y, this.drawH(p));
-    // A unit that higher ground in front could cover draws above that ground (UX v2.2 §7), with a bone outline.
+    // The body stays depth-sorted; its ring, outline and ▼ draw above higher ground in front (UX v2.2 §7).
+    const own = depthOf(this.iso, p.x, p.y) * 10;
     const front = this.frontDepth(p);
-    view.root.setPosition(c.x, c.y).setDepth(front === depthOf(this.iso, p.x, p.y) * 10 ? front + 5 : front + 3);
+    view.root.setPosition(c.x, c.y).setDepth(own + 5);
+    view.over.setData('depth', front === own ? own + 4.9 : front + 3);
+    this.syncOver(view);
     view.outline.setPosition(c.x, c.y);
     view.sigilRoot.setPosition(c.x, c.y);
   }
@@ -477,6 +485,13 @@ export default class BattleScene extends Phaser.Scene {
     g.fillStyle(col, 1).fillTriangle(tip.x, tip.y, rim.x + side.x, rim.y + side.y, rim.x - side.x, rim.y - side.y);
   }
 
+  /** The over layer follows the body's position, fade and visibility (tweens move only the body). */
+  private syncOver(v: UnitView): void {
+    v.over.setPosition(v.root.x, v.root.y).setAlpha(v.root.alpha).setVisible(v.root.visible);
+    const d = v.over.getData('depth') as number | undefined;
+    v.over.setDepth(this.tweens.isTweening(v.root) ? v.root.depth - 0.1 : d ?? v.root.depth - 0.1);
+  }
+
   /** Keep the outline copies on the body's current texture, frame and flip. */
   private syncSilhouette(v: UnitView): void {
     if (!v.sprite || !v.silhouette[0]?.visible) return;
@@ -495,6 +510,7 @@ export default class BattleScene extends Phaser.Scene {
     }
     const bob = Math.floor(time / 400) % 2 ? -2 : 0; // active ▼: 2 frames, 400 ms (UX §4)
     for (const v of this.views.values()) {
+      this.syncOver(v);
       this.syncSilhouette(v);
       v.marker.setY(v.marker.getData('bob') ? bob : 0);
     }
@@ -1428,9 +1444,10 @@ export default class BattleScene extends Phaser.Scene {
           // Single-tile abilities show only the target outline; the area fill is for real areas (UX §4).
           if (area.length > 1 || !this.mode.selected) { for (const p of area) range(p, RANGE.area, 0.35); this.rangeEdge(area); }
           if (this.mode.selected) {
-            // The confirmed target pulses through the cursor sheet's frame colours (Art, #47); see update().
             const sp = this.mode.selected;
-            this.targetMark.setDepth(this.frontDepth(sp) + 2).setData('draw', (c: number) => { this.targetMark.clear(); mark(sp, c, true, this.targetMark); });
+            // Target style (UX v2.2): #C0533F 3 px on a 1 px dark edge, brackets too; below the unit's ring.
+            this.targetMark.setDepth(this.frontDepth(sp) + 2).setData('draw', null);
+            mark(sp, MARK.target, true, this.targetMark);
           }
           preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
@@ -1657,8 +1674,26 @@ export default class BattleScene extends Phaser.Scene {
     return { x: w.x - c.width / 2 - (s.x * ls - c.width / 2) / c.zoom, y: w.y - c.height / 2 - (s.y * ls - c.height / 2) / c.zoom };
   }
 
+  /**
+   * UX camera spec: a safe-area centre at w, moved so the map never leaves more than 25% of the safe area
+   * empty on a side; a map that fits the safe area is centred instead.
+   */
+  private clampToMap(w: Vec): Vec {
+    const b = this.mapBounds();
+    const { w: W, h: H } = screenLp();
+    const z = this.cameras.main.zoom / layoutScale(); // device px per world px, over device px per lp
+    const sw = X(W) / z, sh = X(H - 117 - 50) / z; // safe area in world px
+    const fit = (v: number, lo: number, hi: number, span: number) => {
+      const a = lo - span * 0.25 + span / 2, c = hi + span * 0.25 - span / 2;
+      return a > c || hi - lo <= span ? (lo + hi) / 2 : Math.min(c, Math.max(a, v));
+    };
+    return { x: fit(w.x, b.l, b.r, sw), y: fit(w.y, b.t, b.b, sh) };
+  }
+
   /** Middle of the drawn map: from the highest tile top to the bottom of the level -1 slabs, at this rotation. */
-  private mapMiddle(): Vec {
+  private mapMiddle(): Vec { const b = this.mapBounds(); return { x: (b.l + b.r) / 2, y: (b.t + b.b) / 2 }; }
+
+  private mapBounds(): { l: number; r: number; t: number; b: number } {
     const { width, height } = this.state.map;
     let t = Infinity, b = -Infinity, l = Infinity, r = -Infinity;
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -1667,7 +1702,7 @@ export default class BattleScene extends Phaser.Scene {
       t = Math.min(t, top.y - this.iso.tileH / 2); b = Math.max(b, low.y + this.iso.tileH / 2 + this.iso.step);
       l = Math.min(l, top.x - this.iso.tileW / 2); r = Math.max(r, top.x + this.iso.tileW / 2);
     }
-    return { x: (l + r) / 2, y: (t + b) / 2 };
+    return { l, r, t, b };
   }
 
   /** Default framing: layout zoom, the map centre in the middle of the safe area. */
@@ -1676,7 +1711,8 @@ export default class BattleScene extends Phaser.Scene {
     fitCamera(c);
     c.setZoom(layoutScale() * mapHome());
     this.lastCamSize = { w: c.width, h: c.height };
-    const m = this.scrollToSafe(this.mapMiddle());
+    const u = activeUnit(this.state);
+    const m = this.scrollToSafe(this.clampToMap(u ? tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos)) : this.mapMiddle()));
     c.setScroll(m.x, m.y);
   }
 
@@ -1747,19 +1783,9 @@ export default class BattleScene extends Phaser.Scene {
     const w = tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos));
     const c = this.cameras.main;
     // Centre on the map safe area (UX §8), not the whole canvas.
-    const { x: sx, y: sy } = this.scrollToSafe({ x: w.x, y: w.y - 20 });
+    const { x: sx, y: sy } = this.scrollToSafe(this.clampToMap({ x: w.x, y: w.y - 20 }));
     if (animate) this.tweens.add({ targets: c, scrollX: sx, scrollY: sy, duration: 300, ease: 'Sine.easeInOut' });
     else c.setScroll(sx, sy);
-  }
-
-  /** Auto-follow (UX §2): pan to the acting unit if it is off-screen or near a HUD panel. */
-  private followActive(): void {
-    const u = activeUnit(this.state);
-    if (!u) return;
-    const raw = this.toScreen(tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos)));
-    const s = { x: raw.x / layoutScale(), y: raw.y / layoutScale() };
-    const { w: W, h: H } = screenLp();
-    if (s.x < 120 || s.x > X(W) - 120 || s.y < X(50) + 100 || s.y > X(H - 117) - 40) this.centerOnActive(true);
   }
 
   private zoomBy(f: number, at?: Phaser.Input.Pointer): void {
@@ -2018,7 +2044,7 @@ export default class BattleScene extends Phaser.Scene {
     const u = startNextTurn(this.state);
     if (!u) return this.finish();
     this.rebuildButtons();
-    this.followActive();
+    this.centerOnActive(true);
     if (u.team === 'enemy') {
       this.mode = { kind: 'busy' };
       this.refresh();
