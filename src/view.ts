@@ -2,36 +2,51 @@ import Phaser from 'phaser';
 import { pixelFont } from './fonts';
 
 /**
- * Pixel-perfect view (Director, Jen's 1440p playtest; UX readability pass §1).
- * The game is drawn on a BASE grid of art pixels and shown at a whole-number scale k, so every
- * art pixel is exactly k device pixels: x3 at 1080p, x4 at 1440p, x6 at 4K. The rest letterboxes.
- * Scenes keep their 1280x720 layout coordinates (2 per base pixel), and each camera zooms by S = k / 2.
+ * Pixel-perfect view (Director, Jen's 1440p playtest; UX readability §1 and §8).
+ * The game is drawn on a grid of art pixels (lp) shown at a whole-number scale k, so every art pixel is
+ * exactly k device pixels: x3 at 1080p, x4 at 1440p, x6 at 4K. The logical screen is W x H lp with
+ * W = floor(window / k), at least BASE; extra space goes to the map, never stretched or letterboxed.
+ * Scene coordinates are "layout units", 2 per lp (the old 1280x720 layout), so cameras zoom by k / 2.
  * BASE is the one setting to change if Art moves to higher-res assets.
  */
 export const BASE = { w: 640, h: 360 } as const;
-export const LAYOUT = { w: 1280, h: 720 } as const;
+/** Layout units per lp. */
+export const LP = 2;
 
 const dpr = () => window.devicePixelRatio || 1;
+const deviceSize = () => ({ w: window.innerWidth * dpr(), h: window.innerHeight * dpr() });
 
 /** Largest whole-number scale at which the base grid fits the window's device pixels. */
 export function pickScale(): number {
-  return Math.max(1, Math.floor(Math.min((window.innerWidth * dpr()) / BASE.w, (window.innerHeight * dpr()) / BASE.h)));
+  const d = deviceSize();
+  return Math.max(1, Math.floor(Math.min(d.w / BASE.w, d.h / BASE.h)));
+}
+
+function pickLogical(scale: number): { w: number; h: number } {
+  const d = deviceSize();
+  return { w: Math.max(BASE.w, Math.floor(d.w / scale)), h: Math.max(BASE.h, Math.floor(d.h / scale)) };
 }
 
 let k = pickScale();
-/** Device pixels per base (art) pixel. */
+let logical = pickLogical(k);
+/** Device pixels per art pixel (lp). */
 export const artScale = () => k;
 /** Device pixels per layout unit: the zoom every camera starts from. */
-export const layoutScale = () => (k * BASE.w) / LAYOUT.w;
+export const layoutScale = () => k / LP;
+/** Logical screen in lp (W x H). */
+export const screenLp = () => ({ ...logical });
+/** Logical screen in layout units. */
+export const layoutSize = () => ({ w: logical.w * LP, h: logical.h * LP });
 
-export const canvasSize = () => ({ width: BASE.w * k, height: BASE.h * k });
+export const canvasSize = () => ({ width: logical.w * k, height: logical.h * k });
 /** CSS zoom that makes one canvas pixel one device pixel. */
 export const cssZoom = () => 1 / dpr();
 
-/** Point a camera of canvas size at the 1280x720 layout. */
+/** Point a camera of canvas size at the layout. */
 export function fitCamera(cam: Phaser.Cameras.Scene2D.Camera): void {
   const { width, height } = canvasSize();
-  cam.setSize(width, height).setZoom(layoutScale()).centerOn(LAYOUT.w / 2, LAYOUT.h / 2);
+  const l = layoutSize();
+  cam.setSize(width, height).setZoom(layoutScale()).centerOn(l.w / 2, l.h / 2);
 }
 
 /** Text drawn at device resolution, so it stays sharp under the camera zoom. */
@@ -52,8 +67,10 @@ export const RESCALE = 'view-rescale';
 export function watchScale(game: Phaser.Game): void {
   const apply = () => {
     const next = pickScale();
-    if (next === k) return;
+    const nextLogical = pickLogical(next);
+    if (next === k && nextLogical.w === logical.w && nextLogical.h === logical.h) return;
     k = next;
+    logical = nextLogical;
     const { width, height } = canvasSize();
     game.scale.resize(width, height);
     game.scale.setZoom(cssZoom());
@@ -68,7 +85,7 @@ export function watchScale(game: Phaser.Game): void {
 /** Map zoom steps (UX camera spec): S-1 to S+2 device pixels per art pixel, as a multiple of the layout zoom. */
 export function mapZooms(): number[] {
   const out: number[] = [];
-  for (let p = Math.max(1, k - 1); p <= k + 2; p++) out.push(p / k);
+  for (let p = Math.max(2, k - 1); p <= Math.max(k + 2, 3); p++) out.push(p / k);
   return out;
 }
 

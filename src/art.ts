@@ -28,6 +28,52 @@ export function preloadArt(scene: Phaser.Scene): void {
   scene.load.image('bow', url('bow'));
   scene.load.image('gui-panel', url('gui-panel'));
   for (const s of BUTTON_STATES) scene.load.image(`gui-button-${s}`, url(`gui-button-${s}`));
+  // HUD at 1 lp (UX §8): action tabs, timeline chips, the camera plate and the small round buttons.
+  for (let i = 0; i < 4; i++) { scene.load.image(`gui-tab-${i}`, url(`gui-tab-${i}`)); scene.load.image(`gui-chip-${i}`, url(`gui-chip-${i}`)); }
+  scene.load.image('gui-plate', url('gui-plate'));
+  for (const k of ['gui-less', 'gui-more', 'gui-left', 'gui-right', 'gui-rotl', 'gui-rotr', 'gui-centre']) scene.load.spritesheet(k, url(k), { frameWidth: 16, frameHeight: 16 });
+  for (const k of ['gui-options', 'gui-help']) scene.load.spritesheet(k, url(k), { frameWidth: 24, frameHeight: 24 });
+}
+
+/** Layout units per art pixel: HUD pieces draw at 1 lp (view.ts LP). */
+const HUD_SCALE = 2;
+
+/** 9-slice B panel at 1 lp. Position in layout units, size in lp. */
+export function hudPanel(scene: Phaser.Scene, x: number, y: number, wLp: number, hLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-panel', undefined, wLp, hLp, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE).setOrigin(0).setScale(HUD_SCALE);
+}
+
+/** 9-slice C plate at 1 lp (camera cluster, round-button backs). */
+export function hudPlate(scene: Phaser.Scene, x: number, y: number, wLp: number, hLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-plate', undefined, wLp, hLp, 6, 6, 6, 6).setOrigin(0).setScale(HUD_SCALE);
+}
+
+/** TabC frames: 0 rest, 1 hover, 2 pressed, 3 disabled and cooldown. */
+export type TabFrame = 0 | 1 | 2 | 3;
+const TAB_SLICE = { l: 8, r: 10 };
+
+/** Action button: the TabC sheet 3-sliced to wLp x 22 lp. */
+export function hudTab(scene: Phaser.Scene, x: number, y: number, wLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  const b = scene.add.nineslice(x, y, 'gui-tab-0', undefined, wLp, 22, TAB_SLICE.l, TAB_SLICE.r, 0, 0).setOrigin(0).setScale(HUD_SCALE);
+  b.setData('frame', 0);
+  return b;
+}
+
+export function setTabFrame(b: Phaser.GameObjects.NineSlice, f: TabFrame): void {
+  if (b.getData('frame') === f) return;
+  b.setData('frame', f);
+  const { width, height } = b;
+  b.setTexture(`gui-tab-${f}`);
+  b.setSlices(width, height, TAB_SLICE.l, TAB_SLICE.r, 0, 0);
+}
+
+/** A 1 lp image from the HUD sheets (chips, round buttons, arrows), top-left origin. */
+export function hudImage(scene: Phaser.Scene, x: number, y: number, key: string, frame = 0): Phaser.GameObjects.Image | null {
+  if (!guiOn(scene) || !scene.textures.exists(key)) return null;
+  return scene.add.image(x, y, key, frame).setOrigin(0).setScale(HUD_SCALE);
 }
 
 // ---------- Dragon Regalia GUI (tiopalada, CC0): gold frames, fills darkened by the build script ----------
