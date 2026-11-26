@@ -23,7 +23,8 @@ type Mode =
   | { kind: 'busy' }
   | { kind: 'deploy' }
   | { kind: 'move' }
-  | { kind: 'target'; abilityId: string }
+  /** selected: the first click picks a target and fills the preview; a second click, Enter or Confirm acts (UX readability §2). */
+  | { kind: 'target'; abilityId: string; selected?: Point }
   | { kind: 'facing'; facing: Facing };
 
 interface UnitView {
@@ -103,6 +104,9 @@ export default class BattleScene extends Phaser.Scene {
   private moraleText!: Phaser.GameObjects.Text;
   private unitPanel!: Phaser.GameObjects.Text;
   private previewPanel!: Phaser.GameObjects.Text;
+  /** Target panel controls (UX §2, §3): Confirm names the action and target; arrows step targets. */
+  private confirm!: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; skin: Phaser.GameObjects.NineSlice | null };
+  private targetArrows: Phaser.GameObjects.Text[] = [];
   private hint!: Phaser.GameObjects.Text;
   private logText!: Phaser.GameObjects.Text;
   private debugText!: Phaser.GameObjects.Text;
@@ -515,10 +519,21 @@ export default class BattleScene extends Phaser.Scene {
     panel(890, 380);
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
+    const cbg = this.add.rectangle(902, 660, 356, 36, 0x3b2f12).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(1000).setInteractive({ useHandCursor: true });
+    const cskin = this.skinButton(cbg, 'selected');
+    const clabel = text(this, 920, 678, '', 14, '#f5c451').setOrigin(0, 0.5).setDepth(1001);
+    cbg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); sfx(this, 'ui_click'); this.confirmTarget(); });
+    this.confirm = { bg: cbg, label: clabel, skin: cskin };
+    for (const o of [cbg, clabel, cskin]) o?.setVisible(false);
+    this.targetArrows = [['◀', 1206, -1], ['▶', 1240, 1]].map(([ch, x, dir]) => {
+      const a = text(this, x as number, 556, ch as string, 18, '#f5c451').setDepth(1001).setInteractive({ useHandCursor: true });
+      a.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.cycleTarget(dir as number); });
+      return a;
+    });
     this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
     // Key hints, split so each stays inside its own panel (QA #27).
     text(this, 22, 696, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
-    text(this, 412, 696, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 412, 696, '1-6: actions   Tab: next target   Enter: confirm\nW: wait   Esc: back', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
   }
 
   private rebuildButtons(): void {
@@ -590,9 +605,9 @@ export default class BattleScene extends Phaser.Scene {
       bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
         ev.stopPropagation();
         if (u.status === 'lost') return;
-        const already = this.hover && samePoint(this.hover, u.pos);
+        if (this.mode.kind === 'target') { void this.clickTile(u.pos); return; } // select, then confirm (UX §3)
         this.setHover({ ...u.pos });
-        if (already && this.mode.kind === 'target') void this.clickTile(u.pos);
+        this.panTo(u.pos);
       });
       const t = text(this, x + w / 2, 30, `${e.downed ? '☠ ' : ''}${shortName(u)}`, 12).setOrigin(0.5);
       this.timeline.add([bg, t]);
@@ -653,6 +668,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private refreshPanels(preview: ActionPreview | null): void {
+    this.refreshTargetControls();
     const a = activeUnit(this.state);
     this.unitPanel.setText(a ? this.unitSummary(a, a.team === 'player' ? '▶ ' : 'Enemy turn: ') : '');
     if (preview) {
@@ -665,6 +681,32 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** Show Confirm only once a target is selected, and the arrows while there is more than one target. */
+  private refreshTargetControls(): void {
+    const u = activeUnit(this.state);
+    const m = this.mode;
+    const sel = m.kind === 'target' ? m.selected : undefined;
+    const valid = m.kind === 'target' && u ? targetTiles(this.state, u, m.abilityId) : [];
+    if (sel && m.kind === 'target') {
+      const who = occupant(this.state, sel);
+      const label = `Confirm · ${abilityShort(m.abilityId)} → ${who ? shortName(who) : `tile ${sel.x},${sel.y}`}`;
+      this.confirm.label.setText(label).setFontSize(14);
+      if (this.confirm.label.width > 356 - 36) this.confirm.label.setFontSize(12);
+    }
+    for (const o of [this.confirm.bg, this.confirm.label, this.confirm.skin]) o?.setVisible(!!sel);
+    for (const a of this.targetArrows) a.setVisible(valid.length > 1);
+  }
+
+  /** "Target 2 / 4" for the preview header while targeting. */
+  private targetCount(): string {
+    const u = activeUnit(this.state);
+    if (this.mode.kind !== 'target' || !u) return '';
+    const order = this.targetOrder(u, targetTiles(this.state, u, this.mode.abilityId));
+    const cur = this.mode.selected ?? this.hover;
+    const i = cur ? order.findIndex((p) => samePoint(p, cur)) : -1;
+    return order.length > 1 && i >= 0 ? `   Target ${i + 1} / ${order.length}` : '';
+  }
+
   private tileInfo(): string {
     if (!this.hover) return '';
     const t = tileAt(this.state.map, this.hover);
@@ -674,7 +716,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private previewText(p: ActionPreview): string {
-    const lines = [abilityLabel(p.abilityId)];
+    const lines = [`${abilityLabel(p.abilityId)}${this.targetCount()}`];
     if (p.breaksVow) {
       const actor = getUnit(this.state, p.actorId);
       const vow = this.state.vows[actor.id];
@@ -696,7 +738,7 @@ export default class BattleScene extends Phaser.Scene {
         lines.push(`${u.name}: ${describeEffect(p.abilityId)}`);
       }
     }
-    lines.push('', 'Click to confirm');
+    if (this.mode.kind === 'target' && !this.mode.selected) lines.push('', 'Click to select');
     return lines.join('\n');
   }
 
@@ -763,9 +805,11 @@ export default class BattleScene extends Phaser.Scene {
         }
         const valid = targetTiles(this.state, u, this.mode.abilityId);
         for (const p of valid) paint(p, COLORS.target, 0.9, true);
-        if (this.hover && valid.some((p) => samePoint(p, this.hover!))) {
-          for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, this.hover)) paint(p, COLORS.area, 0.45);
-          preview = previewAction(this.state, u, this.mode.abilityId, this.hover);
+        const aim = this.mode.selected ?? (this.hover && valid.some((p) => samePoint(p, this.hover!)) ? this.hover : null);
+        if (aim) {
+          for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim)) paint(p, COLORS.area, 0.45);
+          if (this.mode.selected) paint(this.mode.selected, COLORS.target, 1, true);
+          preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
       } else if (this.mode.kind === 'facing') {
         for (const f of FACINGS) {
@@ -836,7 +880,7 @@ export default class BattleScene extends Phaser.Scene {
     else if (!u) h = '';
     else if (u.team === 'enemy') h = `${u.name} is acting…`;
     else if (this.mode.kind === 'move') h = this.state.moved ? 'Choose an action, or End turn' : 'Click a blue tile to move, or choose an action';
-    else if (this.mode.kind === 'target') h = 'Hover a target to preview, click to confirm. Right-click to cancel';
+    else if (this.mode.kind === 'target') h = this.mode.selected ? 'Click again or Enter to confirm. Tab for next target.' : 'Click a target to select it. Tab cycles targets. Right-click to cancel';
     else if (this.mode.kind === 'facing') h = 'Choose facing: click a gold tile or use arrow keys, Enter to confirm';
     this.hint.setText(h);
   }
@@ -905,7 +949,8 @@ export default class BattleScene extends Phaser.Scene {
         this.clampCamera();
       }
       else if (e.key === 'Tab') { e.preventDefault(); this.cycleTarget(e.shiftKey ? -1 : 1); }
-      else if (e.key === 'Enter' && (this.mode.kind === 'target' || this.mode.kind === 'move') && this.hover) void this.clickTile(this.hover);
+      else if ((e.key === 'Enter' || e.key === ' ') && this.mode.kind === 'target') { e.preventDefault(); this.confirmTarget(); }
+      else if (e.key === 'Enter' && this.mode.kind === 'move' && this.hover) void this.clickTile(this.hover);
       else if (this.mode.kind === 'facing') {
         // Arrow keys mean the same screen direction at every rotation.
         const screen: Record<string, Facing> = { ArrowUp: 'N', ArrowRight: 'E', ArrowDown: 'S', ArrowLeft: 'W' };
@@ -1199,8 +1244,56 @@ export default class BattleScene extends Phaser.Scene {
     if (this.mode.kind === 'target') valid = targetTiles(this.state, u, this.mode.abilityId);
     else if (this.mode.kind === 'move' && !this.state.moved) valid = reachableTiles(this.state, u).map((n) => n.pos).filter((p) => !samePoint(p, u.pos));
     if (!valid.length) return;
+    if (this.mode.kind === 'target') {
+      const order = this.targetOrder(u, valid);
+      const cur = this.mode.selected ?? this.hover;
+      const i = cur ? order.findIndex((p) => samePoint(p, cur)) : -1;
+      this.selectTarget(order[(i + dir + order.length) % order.length]!, true);
+      return;
+    }
     const i = this.hover ? valid.findIndex((p) => samePoint(p, this.hover!)) : -1;
     this.setHover(valid[(i + dir + valid.length) % valid.length]!);
+  }
+
+  /** Tab order (UX §3): nearest first, then clockwise from screen north. */
+  private targetOrder(u: Unit, valid: Point[]): Point[] {
+    const from = tileCenter(this.iso, u.pos.x, u.pos.y, 0);
+    const angle = (p: Point) => {
+      const c = tileCenter(this.iso, p.x, p.y, 0);
+      return (Math.atan2(c.x - from.x, -(c.y - from.y)) + Math.PI * 2) % (Math.PI * 2);
+    };
+    const dist = (p: Point) => Math.abs(p.x - u.pos.x) + Math.abs(p.y - u.pos.y);
+    return [...valid].sort((a, b) => dist(a) - dist(b) || angle(a) - angle(b));
+  }
+
+  /** First step of targeting: select, show the preview, keep the target on screen. */
+  private selectTarget(p: Point, pan = false): void {
+    if (this.mode.kind !== 'target') return;
+    this.mode = { ...this.mode, selected: { ...p } };
+    sfx(this, 'ui_hover');
+    this.hover = { ...p };
+    this.hoverUnitId = occupant(this.state, p)?.id ?? null;
+    if (pan) this.panTo(p);
+    this.refresh();
+  }
+
+  /** Second step: Enter, Space, the Confirm button or a click on the selection. */
+  private confirmTarget(): void {
+    if (this.mode.kind !== 'target') return;
+    if (this.mode.selected) { void this.clickTile(this.mode.selected); return; }
+    const u = activeUnit(this.state);
+    if (u && this.hover && targetTiles(this.state, u, this.mode.abilityId).some((t) => samePoint(t, this.hover!))) this.selectTarget(this.hover);
+  }
+
+  /** Ease the camera to a tile only if it is off the board area (UX §3, 150 ms). */
+  private panTo(p: Point): void {
+    const ls = layoutScale();
+    const raw = this.toScreen(tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p)));
+    const sx = raw.x / ls, sy = raw.y / ls;
+    if (sx > 80 && sx < 1200 && sy > 66 + 60 && sy < 540 - 30) return;
+    const c = this.cameras.main;
+    const w = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
+    this.tweens.add({ targets: c, scrollX: w.x - c.width / 2, scrollY: w.y - c.height / 2 - (303 * ls - c.height / 2) / c.zoom, duration: 150, ease: 'Sine.easeOut' });
   }
 
   private pressAction(i: number): void {
@@ -1219,7 +1312,8 @@ export default class BattleScene extends Phaser.Scene {
 
   private cancel(): void {
     if (this.mode.kind === 'target' || (this.mode.kind === 'facing' && !this.state.acted)) sfx(this, 'ui_back');
-    if (this.mode.kind === 'target') this.mode = { kind: 'move' };
+    if (this.mode.kind === 'target' && this.mode.selected) this.mode = { kind: 'target', abilityId: this.mode.abilityId }; // back one step
+    else if (this.mode.kind === 'target') this.mode = { kind: 'move' };
     else if (this.mode.kind === 'facing' && !this.state.acted) this.mode = { kind: 'move' };
     this.refresh();
   }
@@ -1238,6 +1332,8 @@ export default class BattleScene extends Phaser.Scene {
     } else if (this.mode.kind === 'target') {
       const abilityId = this.mode.abilityId;
       if (!targetTiles(this.state, u, abilityId).some((t) => samePoint(t, p))) return;
+      // Two-step targeting: a click on a new target selects it; a click on the selection confirms.
+      if (!this.mode.selected || !samePoint(this.mode.selected, p)) { this.selectTarget(p); return; }
       this.mode = { kind: 'busy' };
       await this.performAbility(u, abilityId, p);
       if (this.state.winner) return this.finish();
@@ -1288,7 +1384,7 @@ export default class BattleScene extends Phaser.Scene {
         const g = this.overlays[p.y * this.state.map.width + p.x]!;
         g.fillStyle(COLORS.range, 0.45).fillPoints(topDiamond(this.iso, p.x, p.y, heightAt(this.state.map, p)), true);
       }
-      this.previewPanel.setText(this.previewText(preview).replace('\n\nClick to confirm', ''));
+      this.previewPanel.setText(this.previewText(preview));
       await this.wait(700);
       await this.performAbility(u, plan.action.abilityId, plan.action.target);
       if (this.state.winner) return this.finish();
