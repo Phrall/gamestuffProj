@@ -170,11 +170,14 @@ export function unitLook(u: Unit): { body: Body; weapon: Weapon } {
 
 /** Pack facing for a screen-space direction: SE/NE art, mirrored for the left-hand facings. */
 /** Art's 48x64 unit atlas: frame names are `<who>_<se|ne>_<anim><n>`; sw and nw mirror se and ne. */
-const UNIT48_NAMES = ['maren', 'tobin', 'wren', 'calla', 'captain', 'spearman', 'archer', 'binder'] as const;
+// warden, duelist and pilgrim are the class sprites (Art); a unit uses one when its class id matches.
+// raider, slinger, chief and villager are later slice units: a unit whose id starts with one of these names uses it.
+const UNIT48_NAMES = ['maren', 'tobin', 'wren', 'calla', 'captain', 'spearman', 'archer', 'binder', 'warden', 'duelist', 'pilgrim', 'raider', 'slinger', 'chief', 'villager'] as const;
 export function unit48(u: Unit): string {
+  if (u.classId && ['warden', 'duelist', 'pilgrim'].includes(u.classId)) return u.classId;
   if (u.id.startsWith('spear')) return 'spearman';
   if (u.id.startsWith('archer')) return 'archer';
-  return (UNIT48_NAMES as readonly string[]).includes(u.id) ? u.id : u.team === 'enemy' ? 'spearman' : 'maren';
+  return UNIT48_NAMES.find((n) => u.id.startsWith(n)) ?? (u.team === 'enemy' ? 'spearman' : 'maren');
 }
 /** Feet at (24, 60) in a 48x64 frame (Art): the pivot every unit frame carries. */
 export const UNIT48_ORIGIN = { x: 0.5, y: 60 / 64 } as const;
