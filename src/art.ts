@@ -26,6 +26,85 @@ export function preloadArt(scene: Phaser.Scene): void {
   for (const w of WEAPONS) for (const f of FACES) scene.load.spritesheet(`weapon-${w}${f}`, url(`weapon-${w}${f}`), { frameWidth: 48, frameHeight: 48 });
   scene.load.spritesheet('tileset', url('tileset'), { frameWidth: 32, frameHeight: 32 });
   scene.load.image('bow', url('bow'));
+  scene.load.image('gui-panel', url('gui-panel'));
+  for (const s of BUTTON_STATES) scene.load.image(`gui-button-${s}`, url(`gui-button-${s}`));
+  // HUD at 1 lp (UX §8): action tabs, timeline chips, the camera plate and the small round buttons.
+  for (let i = 0; i < 4; i++) { scene.load.image(`gui-tab-${i}`, url(`gui-tab-${i}`)); scene.load.image(`gui-chip-${i}`, url(`gui-chip-${i}`)); }
+  scene.load.image('gui-plate', url('gui-plate'));
+  for (const k of ['gui-less', 'gui-more', 'gui-left', 'gui-right', 'gui-rotl', 'gui-rotr', 'gui-centre']) scene.load.spritesheet(k, url(k), { frameWidth: 16, frameHeight: 16 });
+  for (const k of ['gui-options', 'gui-help']) scene.load.spritesheet(k, url(k), { frameWidth: 24, frameHeight: 24 });
+}
+
+/** Layout units per art pixel: HUD pieces draw at 1 lp (view.ts LP). */
+const HUD_SCALE = 2;
+
+/** 9-slice B panel at 1 lp. Position in layout units, size in lp. */
+export function hudPanel(scene: Phaser.Scene, x: number, y: number, wLp: number, hLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-panel', undefined, wLp, hLp, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE).setOrigin(0).setScale(HUD_SCALE);
+}
+
+/** 9-slice C plate at 1 lp (camera cluster, round-button backs). */
+export function hudPlate(scene: Phaser.Scene, x: number, y: number, wLp: number, hLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-plate', undefined, wLp, hLp, 6, 6, 6, 6).setOrigin(0).setScale(HUD_SCALE);
+}
+
+/** TabC frames: 0 rest, 1 hover, 2 pressed, 3 disabled and cooldown. */
+export type TabFrame = 0 | 1 | 2 | 3;
+const TAB_SLICE = { l: 8, r: 10 };
+
+/** Action button: the TabC sheet 3-sliced to wLp x 22 lp. */
+export function hudTab(scene: Phaser.Scene, x: number, y: number, wLp: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  const b = scene.add.nineslice(x, y, 'gui-tab-0', undefined, wLp, 22, TAB_SLICE.l, TAB_SLICE.r, 0, 0).setOrigin(0).setScale(HUD_SCALE);
+  b.setData('frame', 0);
+  return b;
+}
+
+export function setTabFrame(b: Phaser.GameObjects.NineSlice, f: TabFrame): void {
+  if (b.getData('frame') === f) return;
+  b.setData('frame', f);
+  const { width, height } = b;
+  b.setTexture(`gui-tab-${f}`);
+  b.setSlices(width, height, TAB_SLICE.l, TAB_SLICE.r, 0, 0);
+}
+
+/** A 1 lp image from the HUD sheets (chips, round buttons, arrows), top-left origin. */
+export function hudImage(scene: Phaser.Scene, x: number, y: number, key: string, frame = 0): Phaser.GameObjects.Image | null {
+  if (!guiOn(scene) || !scene.textures.exists(key)) return null;
+  return scene.add.image(x, y, key, frame).setOrigin(0).setScale(HUD_SCALE);
+}
+
+// ---------- Dragon Regalia GUI (tiopalada, CC0): gold frames, fills darkened by the build script ----------
+export const BUTTON_STATES = ['rest', 'hover', 'selected', 'disabled', 'primary', 'primary-hover'] as const;
+export type ButtonState = (typeof BUTTON_STATES)[number];
+const PANEL_SLICE = 16;
+const BUTTON_SLICE = { x: 14, y: 9 };
+
+/** NineSlice only renders under WebGL; on the canvas renderer the HUD keeps its plain rectangles. */
+const guiOn = (scene: Phaser.Scene) => scene.game.renderer.type === Phaser.WEBGL && scene.textures.exists('gui-panel');
+
+/** A framed HUD panel (top-left origin), or null when the GUI art can't draw. */
+export function guiPanel(scene: Phaser.Scene, x: number, y: number, w: number, h: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  return scene.add.nineslice(x, y, 'gui-panel', undefined, w, h, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE, PANEL_SLICE).setOrigin(0);
+}
+
+/** A framed button background (top-left origin); switch its look with setButtonState. */
+export function guiButton(scene: Phaser.Scene, x: number, y: number, w: number, h: number): Phaser.GameObjects.NineSlice | null {
+  if (!guiOn(scene)) return null;
+  const b = scene.add.nineslice(x, y, 'gui-button-rest', undefined, w, h, BUTTON_SLICE.x, BUTTON_SLICE.x, BUTTON_SLICE.y, BUTTON_SLICE.y).setOrigin(0);
+  b.setData('state', 'rest');
+  return b;
+}
+
+export function setButtonState(b: Phaser.GameObjects.NineSlice, s: ButtonState): void {
+  if (b.getData('state') === s) return;
+  b.setData('state', s);
+  const { width, height } = b;
+  b.setTexture(`gui-button-${s}`);
+  b.setSlices(width, height, BUTTON_SLICE.x, BUTTON_SLICE.x, BUTTON_SLICE.y, BUTTON_SLICE.y);
 }
 
 const ART_KEYS = ['tileset', 'bow', 'fighter-attackSE', 'fighter_oc-attackSE', 'mage-attackSE', 'cleric_oc-attackSE'];
@@ -33,7 +112,7 @@ const ART_KEYS = ['tileset', 'bow', 'fighter-attackSE', 'fighter_oc-attackSE', '
 /** Crisp pixels for the art only (text and vector UI stay smooth), plus the walk and attack animations. */
 export function setupArt(scene: Phaser.Scene): void {
   for (const k of scene.textures.getTextureKeys()) {
-    if (k === 'tileset' || k === 'bow' || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
+    if (k === 'tileset' || k === 'bow' || k.startsWith('gui-') || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
       scene.textures.get(k).setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
   }

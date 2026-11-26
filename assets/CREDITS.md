@@ -15,3 +15,9 @@ Notes
 
 
 In the repo: `assets/art/tiny-tactics/` holds the files the game uses, copied and recoloured by `tools/art/build_tiny_tactics.py` (the Oathcourt pale grey and gold variants are our edits). `assets/art/pixel-v1/` is Art's own draft art, kept as a fallback. `assets/audio/` is original, made by `tools/audio/generate_audio.py`.
+
+## Fonts
+
+- **Tiny5** by Stefan Schmidt, SIL Open Font License 1.1 (via `@fontsource/tiny5`). Body and stat text at 8 px.
+- **Pixelify Sans** by Stefie Justprince, SIL Open Font License 1.1 (via `@fontsource/pixelify-sans`). Headers and banners at 16 px.
+- **OathGlyphs** (`assets/fonts/OathGlyphs.woff2`): our own 17 pixel symbols on Tiny5's grid, built by `tools/fonts/build_glyphs.py`.
