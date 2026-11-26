@@ -554,14 +554,16 @@ export default class BattleScene extends Phaser.Scene {
       if (b.id !== 'wait' && u) {
         const cd = u.cooldowns[b.id] ?? 0;
         if (cd > 0) suffix = ` ·${cd}`;
-        if (u.usedOnce.includes(b.id)) suffix = ' (used)';
+        if (u.usedOnce.includes(b.id)) suffix = ' ·used';
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
       b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
       b.label.setColor(enabled ? COLORS.text : '#4b5563').setFontSize(14);
       // Keep long labels ("Aimed Shot ·2", "Volley (used)") inside the frame's ornaments (QA #40).
-      if (b.label.width > b.bg.width - 32) b.label.setFontSize(12);
+      // Left padding is 18 px and the right ornament ~18 px: the label must fit in width - 36.
+      if (b.label.width > b.bg.width - 36) b.label.setFontSize(12);
+      if (b.label.width > b.bg.width - 36) b.label.setFontSize(11);
       if (b.skin) this.setSkin(b.skin, selected ? 'selected' : enabled ? 'rest' : 'disabled');
       else b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
