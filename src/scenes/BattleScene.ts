@@ -11,11 +11,11 @@ import { swearVow, vowDef } from '../core/vows';
 import { movePreview, type MovePreview, type Threat } from '../core/movePreview';
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
-import { COLORS, FONT } from './theme';
+import { COLORS, FACTION, FONT } from './theme';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
-import { ART_SCALE, hasArt, idleFrame, unitKind } from '../art';
+import { ART_SCALE, TILE, face, hasArt, unitLook } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
@@ -37,8 +37,10 @@ interface UnitView {
   outline: Phaser.GameObjects.Graphics;
   /** Sigil layer above every unit, so a sigil and its leader line are never hidden by a token in front. */
   sigilRoot: Phaser.GameObjects.Container;
-  /** Art's pixel sprite (null in gray-box mode). */
+  /** Pack body sprite (null in gray-box mode). */
   sprite: Phaser.GameObjects.Sprite | null;
+  /** Weapon overlay (48x48 frames) or the bow image. */
+  weapon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null;
   /** Small team-coloured name badge shown with the sprite. */
   badge: Phaser.GameObjects.Text | null;
 }
@@ -137,14 +139,6 @@ export default class BattleScene extends Phaser.Scene {
     this.art = hasArt(this);
     this.setupCameras();
     this.drawMap();
-    if (this.art) {
-      // Stream loop: water 4 frames, ford 2 (Art's pixel-v1).
-      let tick = 0;
-      this.time.addEvent({ delay: 250, loop: true, callback: () => {
-        tick++;
-        for (const w of this.waterImgs) w.img.setFrame(`${w.base}${tick % w.frames}`);
-      } });
-    }
     for (const u of this.state.units) this.views.set(u.id, this.makeUnitView(u));
     this.drawUi();
     this.drawCameraButtons();
@@ -231,7 +225,6 @@ export default class BattleScene extends Phaser.Scene {
     for (const g of this.overlays) g.destroy();
     this.mapGfx = [];
     this.overlays = [];
-    this.waterImgs = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const t = tileAt(map, { x, y })!;
@@ -263,25 +256,35 @@ export default class BattleScene extends Phaser.Scene {
   private art = false;
   /** Token height above the tile centre, HP bar included: gray-box token 47 px, 2x sprite 62 px. */
   private get tokenH(): number { return this.art ? 62 : 47; }
-  private waterImgs: { img: Phaser.GameObjects.Image; base: string; frames: number }[] = [];
-
-  /** One tile from Art's sheet: frames are bottom-aligned, 32x48 art px, drawn at 2x. */
+  /** One tile column from the pack tileset: grass (or water / bridge) on top, dirt below, 8 art px per level. */
   private drawTileArt(x: number, y: number, kind: string, h: number, depth: number): void {
-    const c0 = tileCenter(this.iso, x, y, 0);
-    const left = c0.x - this.iso.tileW / 2;
-    const top = c0.y - this.iso.tileH / 2 - 26 * ART_SCALE;
-    // The stream art runs along screen down-right; after a 90° or 270° turn use the down-left set.
-    const ySet = (this.iso.rot ?? 0) % 2 === 1 ? '_y' : '';
-    const variant = (x * 7 + y * 13) % 3;
-    const frame = kind === 'water' ? `water${ySet}_f0` : kind === 'ford' ? `ford${ySet}_f0` : `grass_h${Math.min(h, 3)}_v${variant}`;
-    const img = this.add.image(left, top, 'tiles', frame).setOrigin(0).setScale(ART_SCALE).setDepth(depth);
-    this.mapGfx.push(img);
-    if (kind === 'water' || kind === 'ford') this.waterImgs.push({ img, base: `${kind}${ySet}_f`, frames: kind === 'water' ? 4 : 2 });
+    const S = ART_SCALE;
+    const c = tileCenter(this.iso, x, y, h);
+    const left = c.x - this.iso.tileW / 2;
+    const surfaceTop = c.y - this.iso.tileH / 2; // top corner of this tile's top diamond
+    let side = 8 * (h + 1); // art px of side wall, as in the pixel-v1 drafts (h0 shows one half step)
+    const top = kind === 'water' ? [TILE.waterFull, TILE.waterHalf] : kind === 'ford' ? [TILE.bridgeHalf, TILE.bridgeHalf] : [TILE.grassFull, TILE.grassHalf];
+    // Top block first, then dirt down to the base; drawn bottom-up so upper blocks cover lower ones.
+    const blocks: { frame: number; full: boolean; offset: number }[] = [];
+    let offset = 0;
+    let first = true;
+    while (side > 0) {
+      const full = side >= 16 && !(first && kind === 'ford');
+      const frame = first ? (full ? top[0]! : top[1]!) : full ? TILE.dirtFull : TILE.dirtHalf;
+      blocks.push({ frame, full, offset });
+      const step = full ? 16 : 8;
+      offset += step;
+      side -= step;
+      first = false;
+    }
+    for (const b of blocks.reverse()) {
+      // Full blocks have their diamond at the cell top; half blocks 8 art px lower.
+      const img = this.add.image(left, surfaceTop + b.offset * S - (b.full ? 0 : 8 * S), 'tileset', b.frame).setOrigin(0).setScale(S).setDepth(depth);
+      this.mapGfx.push(img);
+    }
     if (kind === 'boulder') {
-      const c = tileCenter(this.iso, x, y, h);
-      const prop = this.add.image(c.x - this.iso.tileW / 2, c.y - this.iso.tileH / 2 - 16 * ART_SCALE, 'props', `boulder_v${(x + y) % 2}`)
-        .setOrigin(0).setScale(ART_SCALE).setDepth(depth + 0.5);
-      this.mapGfx.push(prop);
+      const rock = this.add.image(c.x, c.y + 6, 'tileset', TILE.rock).setOrigin(0.5, 1).setScale(S).setDepth(depth + 0.5);
+      this.mapGfx.push(rock);
     }
   }
 
@@ -295,19 +298,26 @@ export default class BattleScene extends Phaser.Scene {
     const sigilText = text(this, -14, -68, '', 12, '#111318').setOrigin(0.5);
     root.add([nub, body, glyph, hp]);
     let sprite: Phaser.GameObjects.Sprite | null = null;
+    let weapon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null = null;
     let badge: Phaser.GameObjects.Text | null = null;
     if (this.art) {
-      // Feet at the bottom centre of the 32x32 cell, 1 art px below the tile centre.
-      sprite = this.add.sprite(0, 2, 'units', `unit_${unitKind(u)}_se_idle0`).setOrigin(0.5, 1).setScale(ART_SCALE);
-      badge = text(this, 13, -6, glyphFor(u), 10, '#ffffff').setOrigin(0.5).setPadding(2, 0, 2, 0)
-        .setBackgroundColor(u.team === 'player' ? '#1d4ed8' : '#b91c1c');
+      const look = unitLook(u);
+      // 32x32 cell, feet at the bottom centre, 1 art px below the tile centre.
+      sprite = this.add.sprite(0, 2, `${look.body}-attackSE`, 3).setOrigin(0.5, 1).setScale(ART_SCALE);
+      // Weapon frames are 48x48 centred on the 32x32 body cell, so their bottom sits 8 art px lower.
+      weapon = look.weapon === 'bow'
+        ? this.add.image(10, -22, 'bow').setScale(ART_SCALE * 0.75)
+        : this.add.sprite(0, 2 + 8 * ART_SCALE, `weapon-${look.weapon}SE`, 3).setOrigin(0.5, 1).setScale(ART_SCALE);
+      badge = text(this, 15, -4, glyphFor(u), 10, '#ffffff').setOrigin(0.5).setPadding(3, 1, 3, 1).setStroke('#111318', 2)
+        .setBackgroundColor(u.team === 'player' ? FACTION.squadHex : FACTION.courtHex);
       root.addAt(sprite, 1);
+      root.addAt(weapon, 2);
       root.add(badge);
       glyph.setVisible(false);
     }
     const outline = this.add.graphics().setDepth(898);
     const sigilRoot = this.add.container(0, 0, [sigil, sigilText]).setDepth(899);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, badge };
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, weapon, badge };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -320,6 +330,31 @@ export default class BattleScene extends Phaser.Scene {
     view.sigilRoot.setPosition(c.x, c.y);
   }
 
+  /** Show a unit's pack pose, facing its current direction on screen. */
+  private pose(u: Unit, v: UnitView, p: 'idle' | 'walk' | 'attack' | 'dead' | 'damage', dir?: Vec): void {
+    if (!v.sprite) return;
+    const look = unitLook(u);
+    const { f, flip } = face(dir ?? screenDir(this.iso, DIRS[u.facing]));
+    v.sprite.setFlipX(flip);
+    const w = v.weapon;
+    if (w) w.setFlipX(flip).setVisible(p === 'idle' || p === 'attack');
+    if (w && look.weapon === 'bow') (w as Phaser.GameObjects.Image).setPosition(flip ? -10 : 10, f === 'NE' ? -26 : -22).setDepth(0);
+    if (look.weapon === 'bow' && w) v.sprite.parentContainer?.moveTo(w, f === 'NE' ? 0 : 2);
+    switch (p) {
+      case 'walk': v.sprite.play(`${look.body}-walking${f}`, true); break;
+      case 'attack':
+        v.sprite.play(`${look.body}-attack${f}`);
+        if (w instanceof Phaser.GameObjects.Sprite) w.play(`weapon-${look.weapon}${f}`);
+        break;
+      case 'dead': v.sprite.stop().setTexture(`${look.body}-dead${f}`, 0); break;
+      case 'damage': v.sprite.stop().setTexture(`${look.body}-damage${f}`, 0); break;
+      default:
+        // Idle: the last attack frame, weapon held ready, so every unit shows what it carries.
+        v.sprite.stop().setTexture(`${look.body}-attack${f}`, 3);
+        if (w instanceof Phaser.GameObjects.Sprite) w.stop().setTexture(`weapon-${look.weapon}${f}`, 3);
+    }
+  }
+
   private drawUnit(u: Unit): void {
     const v = this.views.get(u.id);
     if (!v) return;
@@ -328,12 +363,11 @@ export default class BattleScene extends Phaser.Scene {
       v.outline.clear();
       if (v.root.visible && !this.tweens.isTweening(v.root)) {
         if (v.sprite) {
-          // Art's death strip: frames 0-5 at ~10 fps, fading out over the last two (pixel-v1 README).
-          const kind = unitKind(u);
+          // Pack death: hit frame, then the lying frame, then fade out.
           v.body.clear(); v.hp.clear(); v.nub.clear(); v.badge?.setVisible(false);
-          v.sprite.setFlipX(screenDir(this.iso, DIRS[u.facing]).x < 0); // mirror for left-facing units (QA nit)
-          for (let i = 0; i < 6; i++) this.time.delayedCall(i * 100, () => v.sprite!.setFrame(`unit_${kind}_se_death${i}`));
-          this.tweens.add({ targets: v.root, alpha: 0, duration: 400, delay: 400, onComplete: () => v.root.setVisible(false) });
+          this.pose(u, v, 'damage');
+          this.time.delayedCall(200, () => this.pose(u, v, 'dead'));
+          this.tweens.add({ targets: v.root, alpha: 0, duration: 400, delay: 550, onComplete: () => v.root.setVisible(false) });
         } else {
           this.tweens.add({ targets: v.root, alpha: 0, y: v.root.y + 10, duration: 400, delay: 250, onComplete: () => v.root.setVisible(false) });
         }
@@ -350,18 +384,14 @@ export default class BattleScene extends Phaser.Scene {
     const lit = this.hoverUnitId === u.id;
     v.body.clear();
     if (v.sprite) {
-      // Art sprite: a team-coloured ring at the feet (gold when active), the right facing frame, and the badge.
-      const kind = unitKind(u);
-      v.body.fillStyle(color, 0.35).fillEllipse(0, 0, 40, 18);
-      v.body.lineStyle(active || lit ? 3 : 2, active ? COLORS.gold : lit ? COLORS.hover : color, 1).strokeEllipse(0, 0, 40, 18);
-      if (u.status === 'downed') {
-        v.sprite.setFrame(`unit_${kind}_downed`).setFlipX(false);
-        v.badge?.setText('☠').setY(-4);
-      } else {
-        const f = idleFrame(kind, screenDir(this.iso, DIRS[u.facing]));
-        v.sprite.setFrame(f.frame).setFlipX(f.flip);
-        v.badge?.setText(glyphFor(u)).setY(-6);
-      }
+      // Faction ring under the feet (Director): crimson for the Oathcourt, steel blue for the squad,
+      // 2 art px thick, about 20x8 art px. Gold outer ring for the active unit, pale for hover.
+      const ring = u.team === 'player' ? FACTION.squad : FACTION.court;
+      v.body.lineStyle(7, 0x111318, 0.85).strokeEllipse(0, 0, 40, 16); // dark edge so the ring reads over move/attack highlights (QA)
+      v.body.lineStyle(4, ring, 1).strokeEllipse(0, 0, 40, 16);
+      if (active || lit) v.body.lineStyle(2, active ? COLORS.gold : COLORS.hover, 1).strokeEllipse(0, 0, 52, 24);
+      this.pose(u, v, u.status === 'downed' ? 'dead' : 'idle');
+      v.badge?.setText(u.status === 'downed' ? '☠' : glyphFor(u));
     } else if (u.status === 'downed') {
       v.body.fillStyle(color).fillEllipse(0, -4, 30, 12);
       v.glyph.setY(-4).setText('☠');
@@ -1204,7 +1234,21 @@ export default class BattleScene extends Phaser.Scene {
   private async performAbility(u: Unit, abilityId: string, target: Point): Promise<void> {
     const cast = abilitySound(abilityId);
     if (cast) sfx(this, cast);
+    // Attack pose toward the target before the result lands (pack attack strip, 4 frames).
+    const av = this.views.get(u.id);
+    if (av?.sprite && !samePoint(target, u.pos)) {
+      this.pose(u, av, 'attack', screenDir(this.iso, { x: Math.sign(target.x - u.pos.x), y: Math.sign(target.y - u.pos.y) }));
+      await this.wait(260);
+    }
     const results = useAbility(this.state, u.id, abilityId, target);
+    for (const r of results) {
+      const tv = this.views.get(r.unitId);
+      const tu = getUnit(this.state, r.unitId);
+      if (tv?.sprite && r.hit && r.damage > 0 && tu.status === 'ok') {
+        this.pose(tu, tv, 'damage');
+        this.time.delayedCall(350, () => { if (tu.status === 'ok') this.pose(tu, tv, 'idle'); });
+      }
+    }
     if (isAttack(abilityId) && results.length) {
       const hit = results.some((r) => r.hit && r.damage > 0);
       this.time.delayedCall(cast ? 180 : 0, () => sfx(this, hit ? 'atk_hit' : 'atk_miss'));
@@ -1237,6 +1281,7 @@ export default class BattleScene extends Phaser.Scene {
     let prev = path.length ? { ...path[0]! } : u.pos;
     for (const p of path) {
       const c = tileCenter(this.iso, p.x, p.y, heightAt(this.state.map, p));
+      if (!samePoint(p, prev)) this.pose(u, v, 'walk', screenDir(this.iso, { x: p.x - prev.x, y: p.y - prev.y }));
       v.root.setDepth(Math.max(depthOf(this.iso, p.x, p.y), depthOf(this.iso, prev.x, prev.y)) * 10 + 5);
       await new Promise<void>((r) => this.tweens.add({ targets: [v.root, v.outline, v.sigilRoot], x: c.x, y: c.y, duration: 120, onComplete: () => r() }));
       prev = p;
