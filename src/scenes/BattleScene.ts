@@ -11,7 +11,7 @@ import { swearVow, vowDef } from '../core/vows';
 import { movePreview, type MovePreview, type Threat } from '../core/movePreview';
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
-import { COLORS, FACTION, FONT } from './theme';
+import { COLORS, FACTION, FONT, MARK } from './theme';
 import { RESCALE, fitCamera, layoutScale, mapZooms } from '../view';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
@@ -45,6 +45,10 @@ interface UnitView {
   weapon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null;
   /** Small team-coloured name badge shown with the sprite. */
   badge: Phaser.GameObjects.Text | null;
+  /** UX §4 sprite outline: four tinted copies at ±1 art px behind the body. */
+  silhouette: Phaser.GameObjects.Sprite[];
+  /** ▼ over the head: bone for the active unit (bobbing), red-orange for the selected target. */
+  marker: Phaser.GameObjects.Graphics;
 }
 
 // Captain is "Cp" so it never reads as Calla's "C" (QA #27).
@@ -310,7 +314,8 @@ export default class BattleScene extends Phaser.Scene {
     root.add([nub, body, glyph, hp]);
     let sprite: Phaser.GameObjects.Sprite | null = null;
     let weapon: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null = null;
-    let badge: Phaser.GameObjects.Text | null = null;
+    const badge: Phaser.GameObjects.Text | null = null;
+    const silhouette: Phaser.GameObjects.Sprite[] = [];
     if (this.art) {
       const look = unitLook(u);
       // 32x32 cell, feet at the bottom centre, 1 art px below the tile centre.
@@ -319,16 +324,20 @@ export default class BattleScene extends Phaser.Scene {
       weapon = look.weapon === 'bow'
         ? this.add.image(10, -22, 'bow').setScale(ART_SCALE * 0.75)
         : this.add.sprite(0, 2 + 8 * ART_SCALE, `weapon-${look.weapon}SE`, 3).setOrigin(0.5, 1).setScale(ART_SCALE);
-      badge = text(this, 15, -4, glyphFor(u), 10, FACTION.badgeText).setOrigin(0.5).setPadding(3, 1, 3, 1)
-        .setBackgroundColor(u.team === 'player' ? FACTION.squadHex : FACTION.courtHex);
-      root.addAt(sprite, 1);
-      root.addAt(weapon, 2);
-      root.add(badge);
+      // UX §5: no letter badges on the map; names live in the panels, timeline and Confirm.
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        silhouette.push(this.add.sprite(dx! * ART_SCALE, 2 + dy! * ART_SCALE, `${look.body}-attackSE`, 3).setOrigin(0.5, 1).setScale(ART_SCALE).setVisible(false));
+      }
+      root.addAt(silhouette, 1);
+      root.addAt(sprite, 5);
+      root.addAt(weapon, 6);
       glyph.setVisible(false);
     }
+    const marker = this.add.graphics();
+    root.add(marker);
     const outline = this.add.graphics().setDepth(898);
     const sigilRoot = this.add.container(0, 0, [sigil, sigilText]).setDepth(899);
-    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, weapon, badge };
+    const view = { root, body, glyph, hp, nub, sigil, sigilText, outline, sigilRoot, sprite, weapon, badge, silhouette, marker };
     this.placeUnit(u, u.pos, view);
     return view;
   }
@@ -366,6 +375,49 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** UX §5 team ring: 20x10 lp, 2 lp with a 1 lp dark edge; squad solid, Oathcourt in 4 arcs; a facing notch. */
+  private drawRing(u: Unit, v: UnitView): void {
+    const g = v.body;
+    const col = u.team === 'player' ? FACTION.squad : FACTION.court;
+    const rx = 20, ry = 10;
+    const arc = (a0: number, a1: number, w: number, c: number) => {
+      const pts: Phaser.Math.Vector2[] = [];
+      for (let i = 0; i <= 12; i++) { const a = a0 + ((a1 - a0) * i) / 12; pts.push(new Phaser.Math.Vector2(Math.cos(a) * rx, Math.sin(a) * ry)); }
+      g.lineStyle(w, c, 1).strokePoints(pts, false);
+    };
+    const spans: [number, number][] = u.team === 'player'
+      ? [[0, Math.PI * 2]]
+      : [0, 1, 2, 3].map((q) => [q * (Math.PI / 2) + 0.22, (q + 1) * (Math.PI / 2) - 0.22]); // gaps at E, S, W, N
+    for (const [a0, a1] of spans) arc(a0, a1, 8, MARK.edge);
+    for (const [a0, a1] of spans) arc(a0, a1, 4, col);
+    if (u.status !== 'ok') return;
+    const d = screenDir(this.iso, DIRS[u.facing]);
+    const len = Math.hypot(d.x, d.y) || 1;
+    const n = { x: d.x / len, y: d.y / len };
+    const rim = { x: n.x * rx, y: n.y * ry };
+    const tip = { x: rim.x + n.x * 8, y: rim.y + n.y * 6 };
+    const side = { x: -n.y * 6, y: n.x * 6 };
+    g.fillStyle(MARK.edge, 1).fillTriangle(tip.x + n.x * 2, tip.y + n.y * 2, rim.x + side.x * 1.4, rim.y + side.y * 1.4, rim.x - side.x * 1.4, rim.y - side.y * 1.4);
+    g.fillStyle(col, 1).fillTriangle(tip.x, tip.y, rim.x + side.x, rim.y + side.y, rim.x - side.x, rim.y - side.y);
+  }
+
+  /** Keep the outline copies on the body's current texture, frame and flip. */
+  private syncSilhouette(v: UnitView): void {
+    if (!v.sprite || !v.silhouette[0]?.visible) return;
+    for (const s of v.silhouette) {
+      if (s.texture.key !== v.sprite.texture.key || s.frame.name !== v.sprite.frame.name) s.setTexture(v.sprite.texture.key, v.sprite.frame.name);
+      s.setFlipX(v.sprite.flipX);
+    }
+  }
+
+  update(time: number): void {
+    const bob = Math.floor(time / 400) % 2 ? -2 : 0; // active ▼: 2 frames, 400 ms (UX §4)
+    for (const v of this.views.values()) {
+      this.syncSilhouette(v);
+      v.marker.setY(v.marker.getData('bob') ? bob : 0);
+    }
+  }
+
   private drawUnit(u: Unit): void {
     const v = this.views.get(u.id);
     if (!v) return;
@@ -397,12 +449,22 @@ export default class BattleScene extends Phaser.Scene {
     if (v.sprite) {
       // Faction ring under the feet (Director): crimson for the Oathcourt, steel blue for the squad,
       // 2 art px thick, about 20x8 art px. Gold outer ring for the active unit, pale for hover.
-      const ring = u.team === 'player' ? FACTION.squad : FACTION.court;
-      v.body.lineStyle(6, FACTION.edge, 1).strokeEllipse(0, 0, 40, 16); // 1 px dark edge each side (Art), so it reads over highlights
-      v.body.lineStyle(4, ring, 1).strokeEllipse(0, 0, 40, 16);
-      if (active || lit) v.body.lineStyle(2, active ? COLORS.gold : COLORS.hover, 1).strokeEllipse(0, 0, 52, 24);
+      this.drawRing(u, v);
       this.pose(u, v, u.status === 'downed' ? 'dead' : 'idle');
-      v.badge?.setText(u.status === 'downed' ? '☠' : glyphFor(u));
+      // Sprite outline (UX §4): the selected target in red-orange wins over hover in bone.
+      const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
+      const targeted = !!sel && samePoint(sel, u.pos);
+      const tint = targeted ? MARK.target : lit || active ? MARK.bone : null;
+      for (const s of v.silhouette) s.setVisible(tint !== null && u.status === 'ok').setTintFill(tint ?? 0xffffff);
+      this.syncSilhouette(v);
+      v.marker.clear();
+      if (u.status === 'ok' && (targeted || active)) {
+        const y = -(this.tokenH + 14);
+        const col = targeted ? MARK.target : MARK.bone;
+        v.marker.fillStyle(MARK.edge, 1).fillTriangle(-8, y - 2, 8, y - 2, 0, y + 10);
+        v.marker.fillStyle(col, 1).fillTriangle(-6, y, 6, y, 0, y + 7);
+      }
+      v.marker.setData('bob', active && !targeted);
     } else if (u.status === 'downed') {
       v.body.fillStyle(color).fillEllipse(0, -4, 30, 12);
       v.glyph.setY(-4).setText('☠');
@@ -421,6 +483,13 @@ export default class BattleScene extends Phaser.Scene {
     if (u.status !== 'ok') return;
     const frac = Math.max(0, u.hp / u.base.hp);
     const hy = -(this.tokenH - 1);
+    if (v.sprite) {
+      // UX §5: 20x3 lp with a 1 lp dark edge, filled in the team colour.
+      v.hp.fillStyle(MARK.edge, 1).fillRect(-22, hy - 2, 44, 10);
+      v.hp.fillStyle(0x3a3631, 1).fillRect(-20, hy, 40, 6);
+      v.hp.fillStyle(u.team === 'player' ? FACTION.squadHp : FACTION.court, 1).fillRect(-20, hy, Math.round(40 * frac), 6);
+      return;
+    }
     v.hp.fillStyle(0x000000, 0.7).fillRect(-15, hy, 30, 5);
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, hy, 30 * frac, 5);
   }
@@ -490,7 +559,8 @@ export default class BattleScene extends Phaser.Scene {
       v.sigil.lineStyle(2, 0x1e1b4b, 1).lineBetween(x - 5, y - 10, x + 2, y - 1).lineBetween(x + 2, y - 1, x - 2, y + 4).lineBetween(x - 2, y + 4, x + 5, y + 10);
       v.sigilText.setText('');
     } else {
-      v.sigilText.setPosition(x, y).setText(vow.status === 'fulfilled' ? '✓' : `${vow.progress}/${vow.goal}`);
+      // UX §5: progress lives in the unit panel and the sigil tooltip; the map keeps the diamond, pips and ✓.
+      v.sigilText.setPosition(x, y).setText(vow.status === 'fulfilled' ? '✓' : this.art ? '' : `${vow.progress}/${vow.goal}`);
     }
     // Pips (UX): one per goal step, filled as progress grows.
     for (let i = 0; i < vow.goal && vow.status !== 'broken'; i++) {
@@ -761,6 +831,26 @@ export default class BattleScene extends Phaser.Scene {
       if (stroke) g.lineStyle(width, color, alpha).strokePoints(d, true);
       else g.fillStyle(color, alpha).fillPoints(d, true);
     };
+    /** UX §4: 2 lp of colour with a 1 lp dark edge (1 lp = 2 layout units at map zoom 1). */
+    const mark = (p: Point, color: number, brackets = false) => {
+      const g = this.overlays[p.y * this.state.map.width + p.x];
+      if (!g) return;
+      const d = topDiamond(this.iso, p.x, p.y, heightAt(this.state.map, p));
+      g.lineStyle(8, MARK.edge, 1).strokePoints(d, true);
+      g.lineStyle(4, color, 1).strokePoints(d, true);
+      if (!brackets) return;
+      // Four corner brackets just outside the diamond, 3 lp along each edge.
+      const c = { x: d.reduce((a, q) => a + q.x, 0) / 4, y: d.reduce((a, q) => a + q.y, 0) / 4 };
+      for (let i = 0; i < 4; i++) {
+        const v = d[i]!, out = { x: v.x + (v.x - c.x) * 0.25, y: v.y + (v.y - c.y) * 0.25 };
+        for (const n of [d[(i + 1) % 4]!, d[(i + 3) % 4]!]) {
+          const len = Math.hypot(n.x - v.x, n.y - v.y);
+          const e = { x: out.x + ((n.x - v.x) / len) * 12, y: out.y + ((n.y - v.y) / len) * 12 };
+          g.lineStyle(8, MARK.edge, 1).lineBetween(out.x, out.y, e.x, e.y);
+          g.lineStyle(4, color, 1).lineBetween(out.x, out.y, e.x, e.y);
+        }
+      }
+    };
     // Bulwark break radius (UX): faint gold outline on tiles within breakRadius while the vow is Intact or Held.
     for (const b of this.state.units) {
       const v = this.state.vows[b.id];
@@ -775,7 +865,7 @@ export default class BattleScene extends Phaser.Scene {
     if (u && u.team === 'player') {
       if (this.mode.kind === 'move' && !this.state.moved) {
         const tree = pathTree(this.state, u);
-        for (const n of reachableTiles(this.state, u)) paint(n.pos, COLORS.move, 0.35);
+        for (const n of reachableTiles(this.state, u)) paint(n.pos, COLORS.move, 0.45);
         if (this.hover && tree.has(key(this.hover)) && !occupant(this.state, this.hover)) {
           for (const p of pathTo(tree, this.hover)) paint(p, COLORS.move, 0.55);
         }
@@ -801,15 +891,15 @@ export default class BattleScene extends Phaser.Scene {
         const a = ABILITIES[this.mode.abilityId]!;
         for (let y = 0; y < this.state.map.height; y++) {
           for (let x = 0; x < this.state.map.width; x++) {
-            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) paint({ x, y }, COLORS.range, 0.18);
+            if (a.type !== 'self' && inRange(this.state, a, u.pos, { x, y })) paint({ x, y }, COLORS.range, 0.3);
           }
         }
         const valid = targetTiles(this.state, u, this.mode.abilityId);
         for (const p of valid) paint(p, COLORS.target, 0.9, true);
         const aim = this.mode.selected ?? (this.hover && valid.some((p) => samePoint(p, this.hover!)) ? this.hover : null);
         if (aim) {
-          for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim)) paint(p, COLORS.area, 0.45);
-          if (this.mode.selected) paint(this.mode.selected, COLORS.target, 1, true);
+          for (const p of a.type === 'self' ? [u.pos] : areaTiles(this.state, a, u.pos, aim)) paint(p, MARK.area, 0.45);
+          if (this.mode.selected) mark(this.mode.selected, MARK.target, true);
           preview = previewAction(this.state, u, this.mode.abilityId, aim);
         }
       } else if (this.mode.kind === 'facing') {
@@ -819,7 +909,10 @@ export default class BattleScene extends Phaser.Scene {
         }
       }
     }
-    if (this.hover && tileAt(this.state.map, this.hover)) paint(this.hover, COLORS.hover, 0.9, true);
+    // Active unit's tile: bone outline and a 30% bone fill; hover: bone outline only (UX §4).
+    if (u && u.status === 'ok') { paint(u.pos, MARK.bone, 0.3); mark(u.pos, MARK.bone); }
+    const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
+    if (this.hover && tileAt(this.state.map, this.hover) && !(sel && samePoint(sel, this.hover))) mark(this.hover, MARK.bone);
     return preview;
   }
 
