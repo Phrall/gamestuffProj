@@ -12,6 +12,17 @@ const url = (name: string): string => {
   return hit[1];
 };
 
+// B+C art (Art, 64x32 grid): Yar's Mill Ford terrain atlas (CC-BY 3.0, see assets/CREDITS.md) and the 48x64 units.
+const bcFiles = import.meta.glob('../assets/art/bc/*.{png,json}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const bcUrl = (file: string): string => {
+  const hit = Object.entries(bcFiles).find(([p]) => p.endsWith(`/${file}`));
+  if (!hit) throw new Error(`missing art ${file}`);
+  return hit[1];
+};
+export const TERRAIN = 'millford64';
+export const UNITS48 = 'units48';
+export const SIGILS = 'sigils26';
+
 type Body = 'fighter' | 'fighter_oc' | 'mage' | 'cleric' | 'cleric_oc';
 type Weapon = 'IronSword' | 'IronAxe' | 'WoodenStaff' | 'Scepter' | 'bow';
 const BODIES: Body[] = ['fighter', 'fighter_oc', 'mage', 'cleric', 'cleric_oc'];
@@ -25,6 +36,9 @@ export function preloadArt(scene: Phaser.Scene): void {
   }
   for (const w of WEAPONS) for (const f of FACES) scene.load.spritesheet(`weapon-${w}${f}`, url(`weapon-${w}${f}`), { frameWidth: 48, frameHeight: 48 });
   scene.load.spritesheet('tileset', url('tileset'), { frameWidth: 32, frameHeight: 32 });
+  scene.load.atlas(TERRAIN, bcUrl('millford64.png'), bcUrl('millford64.json'));
+  scene.load.atlas(UNITS48, bcUrl('units48.png'), bcUrl('units48.json'));
+  scene.load.atlas(SIGILS, bcUrl('sigils26.png'), bcUrl('sigils26.json'));
   scene.load.image('bow', url('bow'));
   scene.load.image('gui-panel', url('gui-panel'));
   for (const s of BUTTON_STATES) scene.load.image(`gui-button-${s}`, url(`gui-button-${s}`));
@@ -107,14 +121,18 @@ export function setButtonState(b: Phaser.GameObjects.NineSlice, s: ButtonState):
   b.setSlices(width, height, BUTTON_SLICE.x, BUTTON_SLICE.x, BUTTON_SLICE.y, BUTTON_SLICE.y);
 }
 
-const ART_KEYS = ['tileset', 'bow', 'fighter-attackSE', 'fighter_oc-attackSE', 'mage-attackSE', 'cleric_oc-attackSE'];
+const ART_KEYS = [TERRAIN, UNITS48];
 
 /** Crisp pixels for the art only (text and vector UI stay smooth), plus the walk and attack animations. */
 export function setupArt(scene: Phaser.Scene): void {
   for (const k of scene.textures.getTextureKeys()) {
-    if (k === 'tileset' || k === 'bow' || k.startsWith('gui-') || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
+    if (k === 'tileset' || k === TERRAIN || k === UNITS48 || k === SIGILS || k === 'bow' || k.startsWith('gui-') || k.startsWith('weapon-') || BODIES.some((b) => k.startsWith(`${b}-`))) {
       scene.textures.get(k).setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
+  }
+  if (scene.textures.exists(UNITS48)) for (const n of UNIT48_NAMES) for (const f of ['se', 'ne']) for (const [a, count, fps, repeat] of UNIT48_ANIMS) {
+    const key = `${n}_${f}_${a}`;
+    if (!scene.anims.exists(key)) scene.anims.create({ key, frames: Array.from({ length: count }, (_, i) => ({ key: UNITS48, frame: `${key}${i}` })), frameRate: fps, repeat });
   }
   for (const b of BODIES) for (const f of FACES) {
     const walk = `${b}-walking${f}`;
@@ -151,6 +169,17 @@ export function unitLook(u: Unit): { body: Body; weapon: Weapon } {
 }
 
 /** Pack facing for a screen-space direction: SE/NE art, mirrored for the left-hand facings. */
+/** Art's 48x64 unit atlas: frame names are `<who>_<se|ne>_<anim><n>`; sw and nw mirror se and ne. */
+const UNIT48_NAMES = ['maren', 'tobin', 'wren', 'calla', 'captain', 'spearman', 'archer', 'binder'] as const;
+export function unit48(u: Unit): string {
+  if (u.id.startsWith('spear')) return 'spearman';
+  if (u.id.startsWith('archer')) return 'archer';
+  return (UNIT48_NAMES as readonly string[]).includes(u.id) ? u.id : u.team === 'enemy' ? 'spearman' : 'maren';
+}
+/** Feet at (24, 60) in a 48x64 frame (Art): the pivot every unit frame carries. */
+export const UNIT48_ORIGIN = { x: 0.5, y: 60 / 64 } as const;
+const UNIT48_ANIMS: [string, number, number, number][] = [['idle', 2, 2, -1], ['walk', 4, 8, -1], ['attack', 3, 10, 0], ['death', 3, 8, 0]];
+
 export function face(screen: { x: number; y: number }): { f: 'NE' | 'SE'; flip: boolean } {
   return { f: screen.y >= 0 ? 'SE' : 'NE', flip: screen.x < 0 };
 }

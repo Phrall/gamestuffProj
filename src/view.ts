@@ -62,13 +62,16 @@ function sharpenTexts(list: Phaser.GameObjects.GameObject[]): void {
 }
 
 export const RESCALE = 'view-rescale';
+let lastM = 0;
 
 /** Watch the window: when the whole-number scale changes, resize the canvas and tell running scenes. */
 export function watchScale(game: Phaser.Game): void {
   const apply = () => {
     const next = pickScale();
     const nextLogical = pickLogical(next);
-    if (next === k && nextLogical.w === logical.w && nextLogical.h === logical.h) return;
+    const nextM = mapScale();
+    if (next === k && nextLogical.w === logical.w && nextLogical.h === logical.h && nextM === lastM) return;
+    lastM = nextM;
     k = next;
     logical = nextLogical;
     const { width, height } = canvasSize();
@@ -82,10 +85,25 @@ export function watchScale(game: Phaser.Game): void {
   window.addEventListener('resize', apply);
 }
 
-/** Map zoom steps (UX camera spec): S-1 to S+2 device pixels per art pixel, as a multiple of the layout zoom. */
+/**
+ * Map scale M (UX v2.2 §0, B+C art): the largest whole number of device pixels per map art pixel that
+ * still shows at least MAP_MIN art pixels. x1 at 720p, x2 at 1080p and 1440p, x4 at 4K. The HUD keeps S.
+ * Map art is 1 art px per world unit (64x32 tile tops), so the main camera's zoom is M itself.
+ */
+export const MAP_MIN = { w: 960, h: 540 } as const;
+export function mapScale(): number {
+  const d = deviceSize();
+  return Math.max(1, Math.floor(Math.min(d.w / MAP_MIN.w, d.h / MAP_MIN.h)));
+}
+
+/** Default map zoom as a multiple of the layout zoom (the camera code works relative to the HUD zoom). */
+export const mapHome = (): number => mapScale() / layoutScale();
+
+/** Map zoom steps: M-1, M and M+1 device pixels per art pixel (minimum 1), relative to the layout zoom. */
 export function mapZooms(): number[] {
+  const m = mapScale();
   const out: number[] = [];
-  for (let p = Math.max(2, k - 1); p <= Math.max(k + 2, 3); p++) out.push(p / k);
+  for (let p = Math.max(1, m - 1); p <= m + 1; p++) out.push(p / layoutScale());
   return out;
 }
 
