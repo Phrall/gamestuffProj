@@ -1179,7 +1179,8 @@ export default class BattleScene extends Phaser.Scene {
     }
     p.victims.forEach((x, i) => {
       const u = getUnit(this.state, x.unitId);
-      const who = `${shortName(u) !== u.name ? `${shortName(u)} · ` : ''}${u.name}${x.damage && u.team === actor.team ? ' (ally!)' : ''}`;
+      const hitsAlly = !!x.damage && u.team === actor.team;
+      const who = `${hitsAlly ? '⚠ ' : ''}${shortName(u) !== u.name ? `${shortName(u)} · ` : ''}${u.name}${hitsAlly ? ' (ally!)' : ''}`;
       const tags = [t(`ui.preview.${x.side}`), x.heightDiff > 0 ? `${t('ui.preview.highGround')} +${x.heightDiff}` : x.heightDiff < 0 ? `${t('ui.preview.lowGround')} ${x.heightDiff}` : ''].filter(Boolean).join(' · ');
       if (i === 0 && (x.damage || x.heal || x.revives)) {
         v.name = who;
@@ -1782,7 +1783,15 @@ export default class BattleScene extends Phaser.Scene {
       return (Math.atan2(c.x - from.x, -(c.y - from.y)) + Math.PI * 2) % (Math.PI * 2);
     };
     const dist = (p: Point) => Math.abs(p.x - u.pos.x) + Math.abs(p.y - u.pos.y);
-    return [...valid].sort((a, b) => dist(a) - dist(b) || angle(a) - angle(b));
+    // Tab skips tiles that would only hurt allies (QA #45 note); they stay clickable.
+    const m = this.mode;
+    const allyOnly = (p: Point) => {
+      if (m.kind !== 'target') return false;
+      const vs = previewAction(this.state, u, m.abilityId, p).victims;
+      return vs.length > 0 && vs.every((v) => v.damage > 0 && getUnit(this.state, v.unitId).team === u.team);
+    };
+    const keep = valid.filter((p) => !allyOnly(p) || (m.kind === 'target' && m.selected && samePoint(p, m.selected)));
+    return (keep.length ? keep : [...valid]).sort((a, b) => dist(a) - dist(b) || angle(a) - angle(b));
   }
 
   /** First step of targeting: select, show the preview, keep the target on screen. */
