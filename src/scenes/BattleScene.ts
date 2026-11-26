@@ -180,7 +180,7 @@ export default class BattleScene extends Phaser.Scene {
         const label = choice ? `${vowName(choice)}: ${t(`ui.vows.${choice}.progress`, vowParams(choice, 0))}` : t('ui.deploy.noVow');
         const skin = this.skinButton(btn, choice ? 'selected' : 'rest');
         if (skin) add(skin);
-        add(text(this, 612, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
+        add(text(this, 622, y + 9, label, 14, choice ? '#f5c451' : COLORS.textDim).setDepth(3002));
         btn.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
           ev.stopPropagation();
           this.vowChoice[u.id] = order[(order.indexOf(choice) + 1) % order.length]!;
@@ -516,8 +516,8 @@ export default class BattleScene extends Phaser.Scene {
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
     this.hint = text(this, 590, 528, '', 14, COLORS.textDim).setOrigin(0.5).setDepth(1000).setWordWrapWidth(700).setAlign('center');
     // Key hints, split so each stays inside its own panel (QA #27).
-    text(this, 22, 702, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
-    text(this, 412, 702, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 22, 696, 'Drag/arrows: pan   Wheel: zoom   Q/E: rotate\nC: center   R: reset   M: mute   D: debug', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
+    text(this, 412, 696, '1-6: actions   Tab/Enter: pick target\nW: wait   Esc: cancel', 11, '#6b7280').setOrigin(0, 1).setDepth(1000).setLineSpacing(3);
   }
 
   private rebuildButtons(): void {
@@ -553,13 +553,15 @@ export default class BattleScene extends Phaser.Scene {
       let suffix = '';
       if (b.id !== 'wait' && u) {
         const cd = u.cooldowns[b.id] ?? 0;
-        if (cd > 0) suffix = ` (${cd})`;
+        if (cd > 0) suffix = ` ·${cd}`;
         if (u.usedOnce.includes(b.id)) suffix = ' (used)';
         enabled &&= !this.state.acted && abilityReady(u, b.id) && targetTiles(this.state, u, b.id).length > 0;
       }
       const selected = this.mode.kind === 'target' && this.mode.abilityId === b.id;
       b.label.setText(`${i + 1} ${b.id === 'wait' ? (this.state.moved || this.state.acted ? t('ui.turn.endTurn') : t('ui.turn.wait')) : abilityShort(b.id)}${suffix}`);
-      b.label.setColor(enabled ? COLORS.text : '#4b5563');
+      b.label.setColor(enabled ? COLORS.text : '#4b5563').setFontSize(14);
+      // Keep long labels ("Aimed Shot ·2", "Volley (used)") inside the frame's ornaments (QA #40).
+      if (b.label.width > b.bg.width - 32) b.label.setFontSize(12);
       if (b.skin) this.setSkin(b.skin, selected ? 'selected' : enabled ? 'rest' : 'disabled');
       else b.bg.setFillStyle(selected ? 0x374151 : 0x1f2937).setStrokeStyle(selected ? 2 : 1, selected ? COLORS.gold : COLORS.panelEdge);
     });
