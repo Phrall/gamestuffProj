@@ -16,7 +16,7 @@ import { LP, RESCALE, canvasSize, fitCamera, layoutScale, layoutSize, mapZooms, 
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
-import { ART_SCALE, TILE, face, guiButton, guiPanel, hasArt, hudImage, hudPanel, hudPlate, hudTab, setButtonState, setTabFrame, unitLook, type ButtonState, type TabFrame } from '../art';
+import { ART_SCALE, TILE, WATER_FOAM, face, guiButton, guiPanel, hasArt, hudImage, hudPanel, hudPlate, hudTab, setButtonState, setTabFrame, unitLook, type ButtonState, type TabFrame } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
 type Mode =
@@ -278,7 +278,7 @@ export default class BattleScene extends Phaser.Scene {
         const t = tileAt(map, { x, y })!;
         const d0 = depthOf(this.iso, x, y) * 10;
         if (this.art) {
-          this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0);
+          this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0, t.kind === 'water' ? this.waterFrame(x, y) : t.kind === 'ford' ? WATER_FOAM['']! : undefined);
           this.overlays.push(this.add.graphics().setDepth(d0 + 1));
           continue;
         }
@@ -305,7 +305,25 @@ export default class BattleScene extends Phaser.Scene {
   /** Token height above the tile centre, HP bar included: gray-box token 47 px, 2x sprite 62 px. */
   private get tokenH(): number { return this.art ? 62 : 47; }
   /** One tile column from the pack tileset: grass (or water / bridge) on top, dirt below, 8 art px per level. */
-  private drawTileArt(x: number, y: number, kind: string, h: number, depth: number): void {
+  /** Foam on the water's screen-space edges that meet land (not the ford or bridge), per Art. */
+  private waterFrame(x: number, y: number): number {
+    const map = this.state.map;
+    const edges = new Set<string>();
+    for (const d of [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }]) {
+      const n = tileAt(map, { x: x + d.x, y: y + d.y });
+      if (!n || n.kind === 'water' || n.kind === 'ford' || n.bridge) continue;
+      const s = screenDir(this.iso, d);
+      edges.add(`${s.y < 0 ? 'N' : 'S'}${s.x < 0 ? 'W' : 'E'}`);
+    }
+    // No tile for opposite pairs: keep the side nearer the camera (S*).
+    if (edges.has('NW') && edges.has('SE')) edges.delete('NW');
+    if (edges.has('NE') && edges.has('SW')) edges.delete('NE');
+    const order = ['NW', 'NE', 'SE', 'SW'];
+    const key = order.filter((e) => edges.has(e)).join('+'); // at most two neighbouring edges remain
+    return WATER_FOAM[key] ?? WATER_FOAM['']!;
+  }
+
+  private drawTileArt(x: number, y: number, kind: string, h: number, depth: number, waterFrame?: number): void {
     const S = ART_SCALE;
     const c = tileCenter(this.iso, x, y, h);
     const left = c.x - this.iso.tileW / 2;
@@ -326,6 +344,15 @@ export default class BattleScene extends Phaser.Scene {
       offset += step;
       side -= step;
       first = false;
+    }
+    if (waterFrame !== undefined) {
+      // River (Art): one half-block whose surface sits 8 art px below the bank, so the bank's face shows.
+      // Visual only; the tile keeps its gameplay height.
+      const img = this.add.image(left, surfaceTop, 'tileset', waterFrame).setOrigin(0).setScale(S).setDepth(depth);
+      this.mapGfx.push(img);
+      // Ford (Art): the same water with grey stepping stones on it, so the river is crossed, not cut.
+      if (kind === 'ford') this.mapGfx.push(this.add.image(left, surfaceTop, 'tileset', TILE.stones).setOrigin(0).setScale(S).setDepth(depth + 0.5));
+      return;
     }
     for (const b of blocks.reverse()) {
       // Full blocks have their diamond at the cell top; half blocks 8 art px lower.
