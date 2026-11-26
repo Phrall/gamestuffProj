@@ -31,7 +31,7 @@ export function preloadArt(scene: Phaser.Scene): void {
   // HUD at 1 lp (UX §8): action tabs, timeline chips, the camera plate and the small round buttons.
   for (let i = 0; i < 4; i++) { scene.load.image(`gui-tab-${i}`, url(`gui-tab-${i}`)); scene.load.image(`gui-chip-${i}`, url(`gui-chip-${i}`)); }
   scene.load.image('gui-plate', url('gui-plate'));
-  for (const k of ['gui-less', 'gui-more', 'gui-left', 'gui-right']) scene.load.spritesheet(k, url(k), { frameWidth: 16, frameHeight: 16 });
+  for (const k of ['gui-less', 'gui-more', 'gui-left', 'gui-right', 'gui-rotl', 'gui-rotr', 'gui-centre']) scene.load.spritesheet(k, url(k), { frameWidth: 16, frameHeight: 16 });
   for (const k of ['gui-options', 'gui-help']) scene.load.spritesheet(k, url(k), { frameWidth: 24, frameHeight: 24 });
 }
 

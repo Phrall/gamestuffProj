@@ -6,6 +6,7 @@ Usage: python3 -I tools/art/build_tiny_tactics.py <packs dir> <out dir>
 """
 import glob
 import os
+from collections import Counter
 import shutil
 import sys
 
@@ -153,5 +154,64 @@ for name, key in [('dragonLessButton-Sheet.png', 'gui-less'), ('dragonMoreButton
                   ('dragonLeftArrowButton-Sheet.png', 'gui-left'), ('dragonRightArrowButton-Sheet.png', 'gui-right'),
                   ('dragonOptionsButton-Sheet.png', 'gui-options'), ('dragonHelpButton-Sheet.png', 'gui-help')]:
     gui_src(name).save(os.path.join(out, f'{key}.png'))
+
+# Camera buttons in the Less/More family (Art, #47 review): the Less sheet with its minus erased and an
+# 8x8 glyph stamped in the pack's own glyph ink (light fill, darker 1 px shade above), on all 4 frames.
+# Turn arrows read better than curls at 8 px: a 2 px shaft with a left-pointing head (rotate left).
+ROTL = ['..#.....',
+        '.##.....',
+        '#######.',
+        '#######.',
+        '.##..##.',
+        '..#..##.',
+        '.....##.',
+        '.....##.']
+GLYPHS = {
+    'gui-rotl': ROTL,
+    'gui-rotr': [r[::-1] for r in ROTL],
+    'gui-centre': ['..####..',
+                   '.##..##.',
+                   '##....##',
+                   '#..##..#',
+                   '#..##..#',
+                   '##....##',
+                   '.##..##.',
+                   '..####..'],
+}
+less = gui_src('dragonLessButton-Sheet.png').convert('RGBA')
+more = gui_src('dragonMoreButton-Sheet.png').convert('RGBA')
+lp, mp = less.load(), more.load()
+blank = less.copy()
+bp = blank.load()
+glyph_box = []
+for f in range(4):
+    ox = f * 16
+    # Pixels where Less and More differ belong to the plus. Fill its box from the face pixel to the
+    # left on each row, which leaves a plain face with the pack's edges intact.
+    # The two glyphs share their horizontal bar, so clear the whole box the plus spans.
+    diff = {(x, y) for x in range(16) for y in range(16) if lp[ox + x, y] != mp[ox + x, y]}
+    xs, ys = [x for x, _ in diff], [y for _, y in diff]
+    box = (min(xs), min(ys), max(xs), max(ys))
+    inside = lambda x, y: box[0] <= x <= box[2] and box[1] <= y <= box[3]
+    face = Counter(lp[ox + x, y] for x in range(3, 13) for y in range(3, 11) if not inside(x, y)).most_common(1)[0][0]
+    ink = Counter(mp[ox + x, y] for (x, y) in diff).most_common(1)[0][0]
+    # Flatten the whole 8x8 glyph cell around the plus centre, so no trace of the minus remains.
+    cx, cy = (box[0] + box[2] + 1) // 2, (box[1] + box[3] + 1) // 2
+    for y in range(max(2, cy - 4), min(12, cy + 4)):
+        for x in range(max(2, cx - 4), min(14, cx + 4)):
+            bp[ox + x, y] = face
+    glyph_box.append((box, ink))
+for key, rows in GLYPHS.items():
+    im = blank.copy()
+    px = im.load()
+    for f in range(4):
+        ox = f * 16
+        (x0, y0, x1, y1), ink = glyph_box[f]  # the plus's own ink on this frame
+        cx, cy = (x0 + x1 + 1) // 2, (y0 + y1 + 1) // 2
+        for gy, row in enumerate(rows):
+            for gx, c in enumerate(row):
+                if c == '#':
+                    px[ox + cx - 4 + gx, cy - 4 + gy] = ink
+    im.save(os.path.join(out, f'{key}.png'))
 
 print('ok', len(os.listdir(out)), 'files')

@@ -119,9 +119,11 @@ export default class BattleScene extends Phaser.Scene {
   private unitHp!: Phaser.GameObjects.Text;
   private unitHpBar!: Phaser.GameObjects.Graphics;
   private unitBody!: Phaser.GameObjects.Text;
+  private unitVow!: Phaser.GameObjects.Graphics;
+  private unitVowText!: Phaser.GameObjects.Text;
   private actionHead!: Phaser.GameObjects.Text;
   /** Target panel rows (UX §8). */
-  private pv!: { head: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text; big: Phaser.GameObjects.Text; detail: Phaser.GameObjects.Text; value: Phaser.GameObjects.Text; body: Phaser.GameObjects.Text; strip: Phaser.GameObjects.Rectangle; stripText: Phaser.GameObjects.Text };
+  private pv!: { head: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text; big: Phaser.GameObjects.Text; detail: Phaser.GameObjects.Text; value: Phaser.GameObjects.Text; body: Phaser.GameObjects.Text; strip: Phaser.GameObjects.Rectangle; stripText: Phaser.GameObjects.Text; empty: Phaser.GameObjects.Text };
   /** Target panel controls (UX §2, §3): Confirm names the action and target; arrows step targets. */
   private confirm!: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
   private targetArrows: Phaser.GameObjects.GameObject[] = [];
@@ -229,7 +231,7 @@ export default class BattleScene extends Phaser.Scene {
       go.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); begin(); });
     };
     const begin = () => {
-      if (this.mode.kind !== 'deploy') return;
+      if (this.mode.kind !== 'deploy' || this.overlayKind) return;
       for (const o of this.deployUi) o.destroy();
       this.deployUi = [];
       for (const [id, vow] of Object.entries(this.vowChoice)) if (vow) swearVow(this.state, id, vow);
@@ -638,49 +640,52 @@ export default class BattleScene extends Phaser.Scene {
     this.unitClass = text(this, X(170), X(H - 83), '', 14, COLORS.textDim).setOrigin(1, 0).setDepth(1000);
     this.unitHp = text(this, X(12), X(H - 71), '', 14).setDepth(1000);
     this.unitHpBar = this.add.graphics().setDepth(1000);
-    this.unitBody = text(this, X(12), X(H - 62), '', 14).setDepth(1000).setWordWrapWidth(X(160)).setMaxLines(6);
+    this.unitBody = text(this, X(12), X(H - 62), '', 14).setDepth(1000).setWordWrapWidth(X(160)).setMaxLines(4);
+    this.unitVow = this.add.graphics().setDepth(1000);
+    this.unitVowText = text(this, X(29), 0, '', 14).setOrigin(0, 0.5).setDepth(1000);
 
     const ax = W / 2 - 136;
     this.hudBox(ax, H - 96, 272, 92);
-    this.actionHead = text(this, X(ax + 8), X(H - 88), '', 14, COLORS.textDim).setDepth(1000);
-    text(this, X(ax + 8), X(H - 23), '1-6 act   Tab next   Enter ok   Esc back', 14, '#8c8981').setDepth(1000);
+    this.actionHead = text(this, X(ax + 10), X(H - 88), '', 14, COLORS.textDim).setDepth(1000);
+    text(this, X(ax + 10), X(H - 23), '1-6 act   Tab next   Enter ok   Esc back', 14, '#8c8981').setDepth(1000);
 
     const tx = W - 180;
     this.hudBox(tx, H - 96, 176, 92);
-    const px = X(tx + 8);
+    const px = X(tx + 10);
     this.pv = {
-      head: text(this, px, X(H - 83), '', 14, '#f5c451').setOrigin(0, 0.5).setDepth(1000),
+      head: text(this, px, X(H - 82), '', 14, BONE).setOrigin(0, 0.5).setDepth(1000),
       name: text(this, px, 0, '', 14).setDepth(1000),
       big: text(this, px, 0, '', 32, BONE).setDepth(1000),
       detail: text(this, px, 0, '', 14, COLORS.textDim).setDepth(1000),
       value: text(this, px, 0, '', 14).setDepth(1000),
-      body: text(this, px, 0, '', 14).setDepth(1000).setWordWrapWidth(X(160)),
-      strip: this.add.rectangle(px, X(H - 39), X(160), X(11), 0x5b1f17).setOrigin(0).setDepth(1000),
-      stripText: text(this, px + X(3), X(H - 29.5), '', 14, BONE).setOrigin(0, 0.5).setDepth(1001),
+      body: text(this, px, 0, '', 14).setDepth(1000).setWordWrapWidth(X(156)),
+      strip: this.add.rectangle(X(tx + 8), X(H - 39), X(160), X(11), 0x5b1f17).setOrigin(0).setDepth(1000),
+      stripText: text(this, px + X(1), X(H - 29.5), '', 14, BONE).setOrigin(0, 0.5).setDepth(1001),
+      empty: text(this, X(tx + 88), X(H - 50), 'Hover a unit to see it here', 14, '#8c8981').setOrigin(0.5).setDepth(1000),
     };
     // Confirm (UX §2, §8): 160 x 16, bone primary, drawn in code so it stays on the 1 lp grid.
-    const cbg = this.add.rectangle(px, X(H - 26), X(160), X(16), MARK.bone).setOrigin(0).setStrokeStyle(X(1), MARK.edge).setDepth(1000).setInteractive({ useHandCursor: true });
-    const clabel = text(this, px + X(80), X(H - 18), '', 14, DARK).setOrigin(0.5).setDepth(1001);
-    cbg.on('pointerover', () => cbg.setFillStyle(0xfff6df).setStrokeStyle(X(1), COLORS.gold));
+    const cbg = this.add.rectangle(X(tx + 8), X(H - 26), X(160), X(16), MARK.bone).setOrigin(0).setStrokeStyle(X(1), MARK.edge).setDepth(1000).setInteractive({ useHandCursor: true });
+    const clabel = text(this, X(tx + 88), X(H - 18), '', 14, DARK).setOrigin(0.5).setDepth(1001);
+    cbg.on('pointerover', () => cbg.setFillStyle(0xf7f2e6).setStrokeStyle(X(1), MARK.edge));
     cbg.on('pointerout', () => cbg.setFillStyle(MARK.bone).setStrokeStyle(X(1), MARK.edge));
     cbg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); sfx(this, 'ui_click'); this.confirmTarget(); });
     this.confirm = { bg: cbg, label: clabel };
-    this.targetArrows = ([[-1, 'gui-left', '◀', W - 48], [1, 'gui-right', '▶', W - 30]] as const).map(([dir, key, glyph, x]) =>
-      this.hudButton(x, H - 91, 16, { key, glyph, tip: dir < 0 ? 'Previous target (Shift+Tab)' : 'Next target (Tab)', fn: () => this.cycleTarget(dir) }));
+    this.targetArrows = ([[-1, 'gui-left', '◀', W - 46], [1, 'gui-right', '▶', W - 28]] as const).map(([dir, key, glyph, x]) =>
+      this.hudButton(x, H - 90, 16, { key, glyph, tip: dir < 0 ? 'Previous target (Shift+Tab)' : 'Next target (Tab)', fn: () => this.cycleTarget(dir) }));
 
     // Camera cluster on a 9-slice C plate above the target panel: rotate, compass, rotate | zoom out, zoom in, centre.
     this.camRect = { x: W - 134, y: H - 128, w: 130, h: 28 };
     const c = this.camRect;
     this.hudBox(c.x, c.y, c.w, c.h, 'plate');
     const by = c.y + 6;
-    this.hudButton(c.x + 6, by, 16, { glyph: '⟲', tip: t('ui.camera.rotateLeft'), fn: () => this.rotateView(-1) });
+    this.hudButton(c.x + 6, by, 16, { key: 'gui-rotl', glyph: '⟲', tip: t('ui.camera.rotateLeft'), fn: () => this.rotateView(-1) });
     this.compassAt = { x: X(c.x + 36), y: X(c.y + 14) };
     this.compass = this.add.graphics().setDepth(1000);
     this.compassLabel = text(this, 0, 0, 'N', 14, '#c0533f').setOrigin(0.5).setDepth(1001).setStroke(DARK, X(1));
-    this.hudButton(c.x + 50, by, 16, { glyph: '⟳', tip: t('ui.camera.rotateRight'), fn: () => this.rotateView(1) });
+    this.hudButton(c.x + 50, by, 16, { key: 'gui-rotr', glyph: '⟳', tip: t('ui.camera.rotateRight'), fn: () => this.rotateView(1) });
     this.hudButton(c.x + 74, by, 16, { key: 'gui-less', glyph: '−', tip: `${t('ui.camera.zoomOut')} (-)`, fn: () => this.zoomStep(-1) });
     this.hudButton(c.x + 92, by, 16, { key: 'gui-more', glyph: '+', tip: `${t('ui.camera.zoomIn')} (+)`, fn: () => this.zoomStep(1) });
-    this.hudButton(c.x + 110, by, 16, { glyph: '◎', tip: `${t('ui.camera.center')} (C)`, fn: () => this.centerOnActive(true) });
+    this.hudButton(c.x + 110, by, 16, { key: 'gui-centre', glyph: '◎', tip: `${t('ui.camera.center')} (C)`, fn: () => this.centerOnActive(true) });
     this.drawCompass();
 
     this.hudObjs = this.children.list.filter((o) => !before.has(o));
@@ -708,8 +713,10 @@ export default class BattleScene extends Phaser.Scene {
       glyph = text(this, X(x + size / 2), X(y + size / 2), o.glyph, size > 20 ? 32 : 14, BONE).setOrigin(0.5).setDepth(1001);
     }
     hit.setDepth(1000).setInteractive({ useHandCursor: true });
+    // Frame 1 of the 16 px sheets is green; green is kept for HP only (Art), so they light with frame 2.
+    const lit = size === 16 ? 2 : 1;
     const look = (f: number) => {
-      if (img) img.setFrame(img.getData('off') ? 3 : f);
+      if (img) img.setFrame(img.getData('off') ? 3 : f === 1 ? lit : f);
       else (hit as Phaser.GameObjects.Rectangle).setFillStyle(f ? 0x3a3631 : MARK.edge).setStrokeStyle(X(1), f ? COLORS.gold : 0x5a5347);
     };
     hit.on('pointerover', () => { look(1); sfx(this, 'ui_hover'); this.setHint(o.tip); });
@@ -728,7 +735,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private setHint(s: string): void {
     const { w: W } = screenLp();
-    this.hint.setWordWrapWidth(X(Math.min(400, W - 290))).setText(s);
+    this.hint.setWordWrapWidth(X(W - 2 * 138 - 12)).setMaxLines(3).setText(s);
     const w = Math.max(X(220), this.hint.width + X(12));
     this.hintPlate.setSize(w, Math.max(X(13), this.hint.height + X(3))).setOrigin(0.5, 1).setVisible(!!s);
     this.hint.setVisible(!!s);
@@ -752,11 +759,16 @@ export default class BattleScene extends Phaser.Scene {
 
   private overlay: Phaser.GameObjects.GameObject[] = [];
   private overlayKind: 'pause' | 'help' | null = null;
+  /** Pause menu rows and the focused one (UX #47 review: bone 2 lp outline, Resume by default). */
+  private pauseRows: { focus: () => void; press: () => void }[] = [];
+  private pauseFocus = 0;
 
   private closeOverlay(): void {
     for (const o of this.overlay) o.destroy();
     this.overlay = [];
     this.overlayKind = null;
+    this.pauseRows = [];
+    this.pauseFocus = 0;
   }
 
   private openOverlay(kind: 'pause' | 'help'): void {
@@ -774,7 +786,7 @@ export default class BattleScene extends Phaser.Scene {
     back.on('pointerdown', stop);
     const frame = hudPanel(this, X(px), X(py), pw, ph);
     if (frame) { frame.setDepth(2901.5); back.setStrokeStyle(); }
-    text(this, X(px + 12), X(py + 8), kind === 'help' ? 'Controls' : 'Paused', 32, '#f5c451').setDepth(2902);
+    text(this, X(px + 12), X(py + 8), kind === 'help' ? 'Controls' : 'Paused', 32, BONE).setDepth(2902);
     if (kind === 'help') {
       const left = ['Click: move, select, confirm', 'Right-click / Esc: back', '1-6: actions   W: wait', 'Tab / Shift+Tab: next target', 'Enter / Space: confirm', 'Arrows: facing after acting'];
       const right = ['Drag, arrows: pan', 'Wheel, + / -: zoom', 'Q / E: rotate', 'C: centre on unit', 'R / Home: reset view', 'M: mute   D: debug   H: help'];
@@ -784,23 +796,25 @@ export default class BattleScene extends Phaser.Scene {
     } else {
       const items: [() => string, () => void][] = [
         [() => 'Resume', () => this.closeOverlay()],
-        [() => volumeLabel(), () => { cycleVolume(this); }],
+        [() => volumeLabel().replace('♪', 'Music'), () => { cycleVolume(this); }],
         [() => 'Restart battle', () => { this.closeOverlay(); this.scene.restart(); }],
         [() => 'Back to title', () => { this.closeOverlay(); this.scene.start('Menu'); }],
       ];
-      items.forEach(([label, fn], i) => {
+      const ring = this.add.graphics().setDepth(2904);
+      this.pauseRows = items.map(([label, fn], i) => {
         const y = py + 30 + i * 16;
         const row = this.add.rectangle(X(px + 10), X(y), X(pw - 20), X(14), MARK.edge, 0.6).setOrigin(0).setDepth(2902).setInteractive({ useHandCursor: true });
         const tx = text(this, X(px + 18), X(y + 7), label(), 14, BONE).setOrigin(0, 0.5).setDepth(2903);
-        row.on('pointerover', () => { row.setFillStyle(0x3a3631, 1); tx.setColor('#f5c451'); sfx(this, 'ui_hover'); });
-        row.on('pointerout', () => { row.setFillStyle(MARK.edge, 0.6); tx.setColor(BONE); });
-        row.on('pointerdown', (p: Phaser.Input.Pointer, x: number, yy: number, ev: Phaser.Types.Input.EventData) => {
-          stop(p, x, yy, ev);
-          sfx(this, 'ui_click');
-          fn();
-          if (tx.active) tx.setText(label());
-        });
+        const focus = () => {
+          this.pauseFocus = i;
+          ring.clear().lineStyle(X(2), MARK.bone, 1).strokeRect(X(px + 9), X(y - 1), X(pw - 18), X(16));
+        };
+        const press = () => { sfx(this, 'ui_click'); fn(); if (tx.active) tx.setText(label()); };
+        row.on('pointerover', () => { if (this.pauseFocus !== i) sfx(this, 'ui_hover'); focus(); });
+        row.on('pointerdown', (p: Phaser.Input.Pointer, x: number, yy: number, ev: Phaser.Types.Input.EventData) => { stop(p, x, yy, ev); press(); });
+        return { focus, press };
       });
+      this.pauseRows[0]!.focus();
     }
     this.overlay = this.children.list.filter((o) => !before.has(o));
   }
@@ -853,7 +867,7 @@ export default class BattleScene extends Phaser.Scene {
       // A long label drops its key number rather than shrink (pixel fonts come in whole sizes only).
       const room = X(82 - 6 - 12) - (suffix ? b.cd.width + X(3) : 0);
       if (b.label.width > room) b.label.setText(selected ? `▶${name}` : name);
-      const frame: TabFrame = !enabled ? 3 : selected || this.hoverBtn === i ? 1 : 0;
+      const frame: TabFrame = !enabled ? 3 : selected || this.hoverBtn === i ? 2 : 0; // frame 1 is green (Art: no green but HP)
       if (b.skin) {
         setTabFrame(b.skin, frame);
         const col = enabled ? DARK : '#8c8981';
@@ -889,7 +903,7 @@ export default class BattleScene extends Phaser.Scene {
       const lit = this.hoverUnitId === u.id;
       const out = e.downed || u.status !== 'ok';
       const team = u.team === 'player' ? FACTION.squadHp : FACTION.court;
-      const chip = hudImage(this, X(cx), X(4), `gui-chip-${out ? 3 : lit ? 1 : 0}`);
+      const chip = hudImage(this, X(cx), X(4), `gui-chip-${out ? 3 : lit ? 2 : 0}`);
       const hit = chip ?? this.add.rectangle(X(cx), X(4), X(32), X(32), u.team === 'player' ? 0x0c4a6e : 0x7f1d1d).setOrigin(0).setStrokeStyle(X(1), lit ? COLORS.hover : COLORS.panelEdge);
       hit.setInteractive({ useHandCursor: true });
       hit.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
@@ -903,10 +917,12 @@ export default class BattleScene extends Phaser.Scene {
         this.panTo(u.pos);
       });
       this.timeline.add(hit);
-      // Portrait: the idle frame (last attack frame) cropped inside the chip, over a 3 lp team band.
-      const key = `${unitLook(u).body}-attackSE`;
+      // Dark faction fill (Art): squad #28456A, Oathcourt #681F27, then the portrait and the 3 lp band.
+      this.timeline.add(this.add.rectangle(X(cx + 3), X(4 + 3), X(26), X(26), out ? 0x2e2c2a : u.team === 'player' ? 0x28456a : 0x681f27).setOrigin(0));
+      // Portrait: walk frame 0 facing SE, head and shoulders, 1 lp clear above the hair.
+      const key = `${unitLook(u).body}-walkingSE`;
       if (this.art && this.textures.exists(key)) {
-        const img = this.add.image(X(cx), X(4), key, 3).setOrigin(0).setScale(LP).setCrop(3, 3, 26, 23);
+        const img = this.add.image(X(cx), X(4 + 3), key, 0).setOrigin(0).setScale(LP).setCrop(3, 0, 26, 23);
         if (out) img.setTint(0x6b6b6b);
         this.timeline.add(img);
       } else {
@@ -956,7 +972,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   /** Stat rows shared by the unit panel and the hover card. */
-  private unitLines(u: Unit): string[] {
+  private unitLines(u: Unit, withVow = true): string[] {
     const s = effectiveStats(this.state, u);
     const moraleMove = u.moraleMove ? ` (${u.moraleMove} Shaken)` : '';
     const mods = u.modifiers.map((m) => abilityLabel(m.source)).join(', ');
@@ -965,7 +981,7 @@ export default class BattleScene extends Phaser.Scene {
       `Atk ${s.atk}  Mag ${s.mag}  Def ${s.def}  Res ${s.res}`,
       `Spd ${s.spd}  Mv ${s.move}${moraleMove}  Jmp ${s.jump}  Eva ${s.eva}`,
       mods ? `Effects: ${mods}` : '',
-      this.vowLine(u),
+      withVow ? this.vowLine(u) : '',
     ].filter(Boolean);
   }
 
@@ -998,7 +1014,27 @@ export default class BattleScene extends Phaser.Scene {
     this.unitHpBar.fillStyle(MARK.edge, 1).fillRect(bx - X(1), by - X(1), X(62), X(7));
     this.unitHpBar.fillStyle(0x3a3631, 1).fillRect(bx, by, X(60), X(5));
     this.unitHpBar.fillStyle(a.team === 'player' ? FACTION.squadHp : FACTION.court, 1).fillRect(bx, by, X(Math.round(60 * frac)), X(5));
-    this.unitBody.setText(this.unitLines(a));
+    this.unitBody.setText(this.unitLines(a, false));
+    this.drawVowRow(a);
+  }
+
+  /** Unit panel vow row (UX #47 review): a 13 lp sigil and "Lone Blade 0/1", or "No vow sworn" in grey. */
+  private drawVowRow(u: Unit): void {
+    const g = this.unitVow;
+    g.clear();
+    const y = Math.round((this.unitBody.y + this.unitBody.height) / LP + 8) * LP;
+    this.unitVowText.setY(y);
+    const v = this.state.vows[u.id];
+    if (!v) { this.unitVowText.setX(X(12)).setText('No vow sworn').setColor('#8c8981'); return; }
+    const held = v.status === 'intact' && v.progress >= v.goal;
+    const frozen = v.frozen && v.status === 'intact';
+    const color = v.status === 'broken' ? COLORS.violet : v.status === 'lapsed' ? COLORS.downed : held ? 0xf3e3b5 : COLORS.gold;
+    const cx = X(12 + 6.5);
+    const d = (r: number) => [{ x: cx, y: y - r }, { x: cx + r, y }, { x: cx, y: y + r }, { x: cx - r, y }];
+    g.fillStyle(MARK.edge, 1).fillPoints(d(X(6.5)), true);
+    g.fillStyle(color, frozen ? 0.4 : 1).fillPoints(d(X(5.5)), true);
+    const state = v.status === 'intact' && !held && !frozen ? '' : ` · ${t(`ui.sigil.${frozen ? 'frozen' : v.status === 'fulfilled' ? 'kept' : v.status === 'intact' ? 'held' : v.status}.label`)}`;
+    this.unitVowText.setX(X(29)).setColor(COLORS.text).setText(`${vowName(v.vowId)} ${v.progress}/${v.goal}${state}`);
   }
 
   private refreshPanels(preview: ActionPreview | null): void {
@@ -1023,6 +1059,7 @@ export default class BattleScene extends Phaser.Scene {
     const { h: H } = screenLp();
     const confirmOn = this.mode.kind === 'target' && !!this.mode.selected;
     p.head.setText(v.head);
+    p.empty.setVisible(!v.head && !v.lines.length);
     // Keep the header clear of the ◀ ▶ arrows.
     while (p.head.width > X(124) && p.head.text.length > 3) p.head.setText(`${p.head.text.slice(0, -2)}…`);
     let y = X(H - 74);
@@ -1131,8 +1168,13 @@ export default class BattleScene extends Phaser.Scene {
     for (const u of live) {
       const v = this.views.get(u.id)!;
       let lift = 0;
-      while (lift > -60 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11)) lift -= 10;
-      v.hp.setY(lift);
+      while (lift > -30 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11)) lift -= 10;
+      // Two lifts at most (UX): past that the back bar only shows on hover, or for the active unit or target.
+      const clash = lift <= -30 && placed.some((p) => Math.abs(p.x - v.root.x) < 46 && Math.abs(p.y - (v.root.y + lift)) < 11);
+      const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
+      const keep = this.hoverUnitId === u.id || samePoint(this.hover ?? { x: -1, y: -1 }, u.pos) || this.state.activeId === u.id || (!!sel && samePoint(sel, u.pos));
+      v.hp.setY(clash ? -20 : lift).setVisible(!clash || keep);
+      if (clash && !keep) continue;
       placed.push({ x: v.root.x, y: v.root.y + lift });
     }
   }
@@ -1343,7 +1385,17 @@ export default class BattleScene extends Phaser.Scene {
     });
     const kb = this.input.keyboard!;
     kb.on('keydown', (e: KeyboardEvent) => {
-      if (this.overlayKind) { if (e.key === 'Escape' || e.key === 'h' || e.key === 'H' || e.key === '?') this.closeOverlay(); return; }
+      if (this.overlayKind) {
+        if (this.overlayKind === 'pause' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          const n = this.pauseRows.length;
+          this.pauseRows[(this.pauseFocus + (e.key === 'ArrowUp' ? n - 1 : 1)) % n]!.focus();
+          sfx(this, 'ui_hover');
+        } else if (this.overlayKind === 'pause' && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          this.pauseRows[this.pauseFocus]?.press();
+        } else if (e.key === 'Escape' || e.key === 'h' || e.key === 'H' || e.key === '?') this.closeOverlay();
+        return;
+      }
       if (e.key === 'h' || e.key === 'H' || e.key === '?') { this.openOverlay('help'); return; }
       if (e.key >= '1' && e.key <= '9') this.pressAction(Number(e.key) - 1);
       else if (e.key === 'w' || e.key === 'W') this.pressAction(this.buttons.findIndex((b) => b.id === 'wait'));
