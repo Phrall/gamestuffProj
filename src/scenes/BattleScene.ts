@@ -479,8 +479,12 @@ export default class BattleScene extends Phaser.Scene {
     v.root.setVisible(true).setAlpha(1);
     v.outline.clear();
     const edge = u.team === 'player' ? COLORS.player : COLORS.enemy;
-    if (u.status === 'downed') v.outline.lineStyle(1, edge, 0.6).strokeEllipse(0, -4, 30, 12);
-    else v.outline.lineStyle(1, edge, 0.6).strokeRoundedRect(-13, -38, 26, 36, 5);
+    // Occlusion outline (UX §2), only when higher ground in front can hide the unit (QA #44), sized to the token.
+    if (!v.sprite || this.hiddenByTerrain(u.pos)) {
+      const h = this.tokenH;
+      if (u.status === 'downed') v.outline.lineStyle(2, edge, 0.6).strokeEllipse(0, -4, 30, 12);
+      else v.outline.lineStyle(2, edge, 0.45).strokeRoundedRect(-16, -h, 32, h - 2, 5);
+    }
     const color = u.status === 'downed' ? COLORS.downed : u.team === 'player' ? COLORS.player : COLORS.enemy;
     const active = this.state.activeId === u.id;
     const lit = this.hoverUnitId === u.id;
@@ -531,6 +535,17 @@ export default class BattleScene extends Phaser.Scene {
     }
     v.hp.fillStyle(0x000000, 0.7).fillRect(-15, hy, 30, 5);
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, hy, 30 * frac, 5);
+  }
+
+  /** True when a tile drawn in front of p (within 2 tiles) stands higher, so it can cover a unit on p. */
+  private hiddenByTerrain(p: Point): boolean {
+    const d = depthOf(this.iso, p.x, p.y);
+    const h = heightAt(this.state.map, p);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      if ((dx || dy) && Math.abs(dx) + Math.abs(dy) <= 2 && tileAt(this.state.map, q) && depthOf(this.iso, q.x, q.y) > d && heightAt(this.state.map, q) > h) return true;
+    }
+    return false;
   }
 
   /** Sigil boxes placed in the current refresh, in world space. */
