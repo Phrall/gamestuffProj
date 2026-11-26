@@ -261,6 +261,8 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private art = false;
+  /** Token height above the tile centre, HP bar included: gray-box token 47 px, 2x sprite 62 px. */
+  private get tokenH(): number { return this.art ? 62 : 47; }
   private waterImgs: { img: Phaser.GameObjects.Image; base: string; frames: number }[] = [];
 
   /** One tile from Art's sheet: frames are bottom-aligned, 32x48 art px, drawn at 2x. */
@@ -329,6 +331,7 @@ export default class BattleScene extends Phaser.Scene {
           // Art's death strip: frames 0-5 at ~10 fps, fading out over the last two (pixel-v1 README).
           const kind = unitKind(u);
           v.body.clear(); v.hp.clear(); v.nub.clear(); v.badge?.setVisible(false);
+          v.sprite.setFlipX(screenDir(this.iso, DIRS[u.facing]).x < 0); // mirror for left-facing units (QA nit)
           for (let i = 0; i < 6; i++) this.time.delayedCall(i * 100, () => v.sprite!.setFrame(`unit_${kind}_se_death${i}`));
           this.tweens.add({ targets: v.root, alpha: 0, duration: 400, delay: 400, onComplete: () => v.root.setVisible(false) });
         } else {
@@ -376,7 +379,7 @@ export default class BattleScene extends Phaser.Scene {
     v.hp.clear();
     if (u.status !== 'ok') return;
     const frac = Math.max(0, u.hp / u.base.hp);
-    const hy = v.sprite ? -50 : -46;
+    const hy = -(this.tokenH - 1);
     v.hp.fillStyle(0x000000, 0.7).fillRect(-15, hy, 30, 5);
     v.hp.fillStyle(frac > 0.5 ? 0x4ade80 : frac > 0.25 ? 0xfacc15 : 0xef4444).fillRect(-15, hy, 30 * frac, 5);
   }
@@ -385,7 +388,7 @@ export default class BattleScene extends Phaser.Scene {
   private placedSigils: Phaser.Geom.Rectangle[] = [];
 
   private sigilSpot(u: Unit): Vec {
-    const base = u.status === 'downed' ? -26 : -68;
+    const base = u.status === 'downed' ? -26 : -(this.tokenH + 21);
     const candidates: Vec[] = [{ x: -14, y: base }, { x: 14, y: base }, { x: 0, y: base - 6 }, { x: -24, y: base + 6 }, { x: 24, y: base + 6 }, { x: -33, y: base + 12 }, { x: 33, y: base + 12 }, { x: 0, y: base - 26 }];
     const me = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
     const others = this.state.units.filter((o) => o.id !== u.id && o.status !== 'lost').map((o) => {
@@ -393,7 +396,7 @@ export default class BattleScene extends Phaser.Scene {
       const dx = c.x - me.x;
       const dy = c.y - me.y;
       // Token body plus HP bar (or the flat downed marker), relative to this unit.
-      return o.status === 'downed' ? new Phaser.Geom.Rectangle(dx - 15, dy - 10, 30, 12) : new Phaser.Geom.Rectangle(dx - 15, dy - 47, 30, 47);
+      return o.status === 'downed' ? new Phaser.Geom.Rectangle(dx - 15, dy - 10, 30, 12) : new Phaser.Geom.Rectangle(dx - 15, dy - this.tokenH, 30, this.tokenH);
     });
     // Other units' placed sigils, moved into this unit's local space.
     for (const q of this.placedSigils) others.push(new Phaser.Geom.Rectangle(q.x - me.x, q.y - me.y, q.width, q.height));
@@ -427,9 +430,9 @@ export default class BattleScene extends Phaser.Scene {
     v.sigil.setAlpha(frozen ? 0.4 : 1);
     v.sigilText.setAlpha(frozen ? 0.4 : 1);
     // Leader line to the owner's head, so a sigil that had to move aside still reads as this unit's.
-    if (u.status === 'ok' && (x !== 0 || y < -74)) {
-      v.sigil.lineStyle(4, 0x000000, 0.8).lineBetween(x, y + 14, 0, -47);
-      v.sigil.lineStyle(2, color, 1).lineBetween(x, y + 14, 0, -47);
+    if (u.status === 'ok' && (x !== 0 || y < -(this.tokenH + 27))) {
+      v.sigil.lineStyle(4, 0x000000, 0.8).lineBetween(x, y + 14, 0, -this.tokenH);
+      v.sigil.lineStyle(2, color, 1).lineBetween(x, y + 14, 0, -this.tokenH);
     }
     v.sigil.fillStyle(color, 1).fillPoints(d, true);
     if (frozen) v.sigil.fillStyle(0xe5e7eb, 1).fillRect(x + 12, y - 12, 2, 7).fillRect(x + 16, y - 12, 2, 7);
@@ -1070,7 +1073,7 @@ export default class BattleScene extends Phaser.Scene {
     const units = this.state.units.filter((u) => u.status !== 'lost').sort((a, b) => depthOf(this.iso, b.pos.x, b.pos.y) - depthOf(this.iso, a.pos.x, a.pos.y));
     for (const u of units) {
       const c = tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos));
-      const top = u.status === 'downed' ? c.y - 14 : c.y - 50;
+      const top = u.status === 'downed' ? c.y - 14 : c.y - this.tokenH - 3;
       if (Math.abs(p.x - c.x) <= 16 && p.y >= top && p.y <= c.y + 2) return { ...u.pos };
     }
     return pickTile(this.iso, this.state.map.width, this.state.map.height, (x, y) => heightAt(this.state.map, { x, y }), p);
