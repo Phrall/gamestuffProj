@@ -12,6 +12,7 @@ import { movePreview, type MovePreview, type Threat } from '../core/movePreview'
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
 import { COLORS, FACTION, FONT } from './theme';
+import { RESCALE, fitCamera, layoutScale, mapZooms } from '../view';
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
@@ -73,7 +74,7 @@ export const abilityLabel = (id: string): string => {
   return n !== id ? n : id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 };
 
-const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, color: string = COLORS.text) =>
+const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, color: string = COLORS.text) => // crisp via view.installCrispText
   scene.add.text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color });
 
 export default class BattleScene extends Phaser.Scene {
@@ -896,7 +897,7 @@ export default class BattleScene extends Phaser.Scene {
       else if (e.key === 'c' || e.key === 'C') this.centerOnActive();
       else if (this.mode.kind !== 'facing' && e.key.startsWith('Arrow')) {
         const cam = this.cameras.main;
-        const step = 48 / cam.zoom;
+        const step = (48 * layoutScale()) / cam.zoom;
         if (e.key === 'ArrowLeft') cam.scrollX -= step;
         if (e.key === 'ArrowRight') cam.scrollX += step;
         if (e.key === 'ArrowUp') cam.scrollY -= step;
@@ -924,12 +925,35 @@ export default class BattleScene extends Phaser.Scene {
    * draws the HUD. Objects at depth 999 and above are HUD; everything else is board.
    */
   private setupCameras(): void {
-    const main = this.cameras.main;
-    main.setZoom(1).setScroll(0, 0);
+    fitCamera(this.cameras.main);
     this.uiCam = this.cameras.add(0, 0, 1280, 720).setName('ui');
+    fitCamera(this.uiCam);
     this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this));
+    this.events.on(RESCALE, this.onRescale, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.sortCameras, this);
+      this.events.off(RESCALE, this.onRescale, this);
+    });
   }
+
+  /** Map zoom as a multiple of the layout zoom: 1 is the default view at any window size. */
+  private get mapZoom(): number { return this.cameras.main.zoom / layoutScale(); }
+
+  /** The whole-number scale changed (window resized): keep the board centre and the nearest zoom step. */
+  private onRescale(): void {
+    const main = this.cameras.main;
+    const centre = { x: main.scrollX + main.width / 2, y: main.scrollY + main.height / 2 };
+    const was = main.zoom / this.lastLayoutScale;
+    this.lastLayoutScale = layoutScale();
+    const zs = mapZooms();
+    const z = zs.reduce((best, v) => (Math.abs(v - was) < Math.abs(best - was) ? v : best), zs[0]!);
+    fitCamera(main);
+    main.setZoom(layoutScale() * z).centerOn(centre.x, centre.y);
+    fitCamera(this.uiCam);
+    this.clampCamera();
+  }
+
+  private lastLayoutScale = layoutScale();
 
   private sortCameras(): void {
     for (const o of this.children.list) {
@@ -943,20 +967,20 @@ export default class BattleScene extends Phaser.Scene {
 
   /** True when the pointer is over the board area, not the timeline strip or the bottom panels. */
   private onBoard(p: Phaser.Input.Pointer): boolean {
-    if (p.x >= 940 && p.y >= 492) return false; // camera control cluster
-    return p.y > 66 && p.y < 540;
+    const s = layoutScale(); // pointer is in canvas pixels; the HUD is laid out in 1280x720 units
+    const x = p.x / s, y = p.y / s;
+    if (x >= 940 && y >= 484) return false; // camera control cluster
+    return y > 66 && y < 540;
   }
 
-  /** Zoom levels: 1 = the 2x pixel-art base, so these are 2x, 3x and 4x (UX §2). */
-  private static ZOOMS = [1, 1.5, 2];
-
+  /** Zoom steps keep every art pixel a whole number of device pixels (src/view.ts, UX camera spec). */
   private zoomStep(dir: number, at?: Phaser.Input.Pointer): void {
-    const zs = BattleScene.ZOOMS;
-    const cur = this.cameras.main.zoom;
+    const zs = mapZooms();
+    const cur = this.mapZoom;
     let i = zs.findIndex((z) => Math.abs(z - cur) < 0.01);
-    if (i < 0) i = 0;
+    if (i < 0) i = zs.findIndex((z) => z >= 1);
     const next = zs[Math.max(0, Math.min(zs.length - 1, i + dir))]!;
-    if (next !== cur) this.zoomBy(next / cur, at);
+    if (Math.abs(next - cur) > 0.001) this.zoomBy(next / cur, at);
   }
 
   /** Visible world rectangle of the main camera, worked out from scroll and zoom. */
@@ -995,7 +1019,7 @@ export default class BattleScene extends Phaser.Scene {
     const c = this.cameras.main;
     // Centre on the board area (between the timeline and the panels), not the whole canvas.
     const sx = w.x - c.width / 2;
-    const sy = w.y - 20 - c.height / 2 - (303 - c.height / 2) / c.zoom;
+    const sy = w.y - 20 - c.height / 2 - (303 * layoutScale() - c.height / 2) / c.zoom;
     if (animate) this.tweens.add({ targets: c, scrollX: sx, scrollY: sy, duration: 300, ease: 'Sine.easeInOut' });
     else c.setScroll(sx, sy);
   }
@@ -1004,7 +1028,8 @@ export default class BattleScene extends Phaser.Scene {
   private followActive(): void {
     const u = activeUnit(this.state);
     if (!u) return;
-    const s = this.toScreen(tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos)));
+    const raw = this.toScreen(tileCenter(this.iso, u.pos.x, u.pos.y, heightAt(this.state.map, u.pos)));
+    const s = { x: raw.x / layoutScale(), y: raw.y / layoutScale() };
     if (s.x < 120 || s.x > 1160 || s.y < 66 + 120 || s.y > 540 - 60) this.centerOnActive(true);
   }
 
@@ -1016,7 +1041,8 @@ export default class BattleScene extends Phaser.Scene {
     const sy = at?.y ?? cam.height / 2;
     const wx = (sx - cam.width / 2) / cam.zoom + cam.width / 2 + cam.scrollX;
     const wy = (sy - cam.height / 2) / cam.zoom + cam.height / 2 + cam.scrollY;
-    const z = Phaser.Math.Clamp(cam.zoom * f, 0.6, 2.2);
+    const zs = mapZooms();
+    const z = Phaser.Math.Clamp(cam.zoom * f, zs[0]! * layoutScale(), zs[zs.length - 1]! * layoutScale());
     cam.setZoom(z);
     cam.scrollX = wx - (sx - cam.width / 2) / z - cam.width / 2;
     cam.scrollY = wy - (sy - cam.height / 2) / z - cam.height / 2;
@@ -1024,7 +1050,7 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   private resetCamera(): void {
-    this.cameras.main.setZoom(1).setScroll(0, 0);
+    fitCamera(this.cameras.main);
     if ((this.iso.rot ?? 0) !== 0) this.rotateView(-(this.iso.rot ?? 0));
   }
 
@@ -1487,7 +1513,12 @@ export default class BattleScene extends Phaser.Scene {
         const cam = this.cameras.main;
         const sx = (p.x - cam.scrollX - cam.width / 2) * cam.zoom + cam.width / 2;
         const sy = (p.y - cam.scrollY - cam.height / 2) * cam.zoom + cam.height / 2;
-        if (sy > 66 && sy < 540 && sx >= 0 && sx <= 1280) return { x: sx, y: sy };
+        const ls = layoutScale();
+        if (sy / ls > 66 && sy / ls < 540 && sx >= 0 && sx / ls <= 1280) {
+          // Canvas pixels to page pixels (the canvas is shown at 1/devicePixelRatio and letterboxed).
+          const r = this.game.canvas.getBoundingClientRect();
+          return { x: r.left + (sx * r.width) / this.game.canvas.width, y: r.top + (sy * r.height) / this.game.canvas.height };
+        }
       }
     }
     return null;
@@ -1504,7 +1535,7 @@ export default class BattleScene extends Phaser.Scene {
       /** Turn the view a quarter turn (1 = clockwise, -1 = counter-clockwise). */
       rotate: (dir = 1) => this.rotateView(dir),
       resetCamera: () => this.resetCamera(),
-      get camera() { const c = scene.cameras.main; return { rot: scene.iso.rot ?? 0, zoom: c.zoom, scrollX: c.scrollX, scrollY: c.scrollY }; },
+      get camera() { const c = scene.cameras.main; return { rot: scene.iso.rot ?? 0, zoom: c.zoom / layoutScale(), scale: layoutScale() * 2, scrollX: c.scrollX, scrollY: c.scrollY }; },
       /** What the enemy AI would do with this unit; QA uses it for automated runs. */
       plan: (unitId: string) => planTurn(this.state, getUnit(this.state, unitId)),
       /** What the active unit could hit from (x, y) if it moved there (#21). */
