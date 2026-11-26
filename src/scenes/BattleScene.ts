@@ -308,7 +308,7 @@ export default class BattleScene extends Phaser.Scene {
       weapon = look.weapon === 'bow'
         ? this.add.image(10, -22, 'bow').setScale(ART_SCALE * 0.75)
         : this.add.sprite(0, 2 + 8 * ART_SCALE, `weapon-${look.weapon}SE`, 3).setOrigin(0.5, 1).setScale(ART_SCALE);
-      badge = text(this, 15, -4, glyphFor(u), 10, '#ffffff').setOrigin(0.5).setPadding(2, 0, 2, 0)
+      badge = text(this, 15, -4, glyphFor(u), 10, '#ffffff').setOrigin(0.5).setPadding(3, 1, 3, 1).setStroke('#111318', 2)
         .setBackgroundColor(u.team === 'player' ? FACTION.squadHex : FACTION.courtHex);
       root.addAt(sprite, 1);
       root.addAt(weapon, 2);
@@ -387,6 +387,7 @@ export default class BattleScene extends Phaser.Scene {
       // Faction ring under the feet (Director): crimson for the Oathcourt, steel blue for the squad,
       // 2 art px thick, about 20x8 art px. Gold outer ring for the active unit, pale for hover.
       const ring = u.team === 'player' ? FACTION.squad : FACTION.court;
+      v.body.lineStyle(7, 0x111318, 0.85).strokeEllipse(0, 0, 40, 16); // dark edge so the ring reads over move/attack highlights (QA)
       v.body.lineStyle(4, ring, 1).strokeEllipse(0, 0, 40, 16);
       if (active || lit) v.body.lineStyle(2, active ? COLORS.gold : COLORS.hover, 1).strokeEllipse(0, 0, 52, 24);
       this.pose(u, v, u.status === 'downed' ? 'dead' : 'idle');
