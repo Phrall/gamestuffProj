@@ -84,3 +84,12 @@ export const TILE = {
   bridgeHalf: 85,
   rock: 64,
 } as const;
+
+/**
+ * River half-blocks with foam on the screen-space edges that touch land (Art, measured from the tileset).
+ * Key: which of NW, NE, SE, SW border land. Opposite pairs have no tile; the nearer-camera side is used.
+ */
+export const WATER_FOAM: Record<string, number> = {
+  '': 33, NW: 53, NE: 38, SE: 55, SW: 70,
+  'NW+NE': 37, 'NE+SE': 39, 'SE+SW': 71, 'NW+SW': 69,
+};
