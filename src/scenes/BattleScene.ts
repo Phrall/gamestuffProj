@@ -302,8 +302,17 @@ export default class BattleScene extends Phaser.Scene {
       // Visual only; the tile keeps its gameplay height.
       const img = this.add.image(left, surfaceTop, 'tileset', waterFrame).setOrigin(0).setScale(S).setDepth(depth);
       this.mapGfx.push(img);
-      // Ford (Art): the same water with grey stepping stones on it, so the river is crossed, not cut.
-      if (kind === 'ford') this.mapGfx.push(this.add.image(left, surfaceTop, 'tileset', TILE.stones).setOrigin(0).setScale(S).setDepth(depth + 0.5));
+      // Ford (Art): a warm stepping stone on the water, set 4 art px off centre along the crossing and
+      // alternating from tile to tile, so water shows between stones and the line reads as a path.
+      if (kind === 'ford') {
+        const land = (dx: number, dy: number) => { const t = tileAt(this.state.map, { x: x + dx, y: y + dy }); return !!t && t.kind !== 'water'; };
+        const axis = land(1, 0) || land(-1, 0) ? { x: 1, y: 0 } : { x: 0, y: 1 };
+        const d = screenDir(this.iso, axis);
+        const len = Math.hypot(d.x, d.y) || 1;
+        const sign = (x + y) % 2 ? 1 : -1;
+        const ox = Math.round((d.x / len) * 4 * sign) * S, oy = Math.round((d.y / len) * 2 * sign) * S;
+        this.mapGfx.push(this.add.image(left + ox, surfaceTop + 4 * S + oy, 'tileset', TILE.stones).setOrigin(0).setScale(S).setDepth(depth + 0.5));
+      }
       return;
     }
     for (const b of blocks.reverse()) {
