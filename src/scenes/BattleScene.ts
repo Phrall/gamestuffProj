@@ -519,9 +519,10 @@ export default class BattleScene extends Phaser.Scene {
     panel(890, 380);
     this.unitPanel = text(this, 22, 558, '', 14).setDepth(1000).setLineSpacing(4);
     this.previewPanel = text(this, 902, 558, '', 14).setDepth(1000).setLineSpacing(4).setWordWrapWidth(360);
-    const cbg = this.add.rectangle(902, 660, 356, 36, 0x3b2f12).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(1000).setInteractive({ useHandCursor: true });
-    const cskin = this.skinButton(cbg, 'selected');
-    const clabel = text(this, 920, 678, '', 14, '#f5c451').setOrigin(0, 0.5).setDepth(1001);
+    // Primary style (UX): bone fill and dark text, so Confirm never reads as another action.
+    const cbg = this.add.rectangle(902, 660, 356, 36, 0xede6d3).setOrigin(0).setStrokeStyle(2, COLORS.gold).setDepth(1000).setInteractive({ useHandCursor: true });
+    const cskin = this.skinButton(cbg, 'primary');
+    const clabel = text(this, 920, 678, '', 14, '#2a2420').setOrigin(0, 0.5).setDepth(1001);
     cbg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); sfx(this, 'ui_click'); this.confirmTarget(); });
     this.confirm = { bg: cbg, label: clabel, skin: cskin };
     for (const o of [cbg, clabel, cskin]) o?.setVisible(false);
@@ -694,7 +695,7 @@ export default class BattleScene extends Phaser.Scene {
       if (this.confirm.label.width > 356 - 36) this.confirm.label.setFontSize(12);
     }
     for (const o of [this.confirm.bg, this.confirm.label, this.confirm.skin]) o?.setVisible(!!sel);
-    for (const a of this.targetArrows) a.setVisible(valid.length > 1);
+    for (const a of this.targetArrows) a.setVisible(valid.length > 0).setAlpha(valid.length > 1 ? 1 : 0.35);
   }
 
   /** "Target 2 / 4" for the preview header while targeting. */
@@ -704,7 +705,7 @@ export default class BattleScene extends Phaser.Scene {
     const order = this.targetOrder(u, targetTiles(this.state, u, this.mode.abilityId));
     const cur = this.mode.selected ?? this.hover;
     const i = cur ? order.findIndex((p) => samePoint(p, cur)) : -1;
-    return order.length > 1 && i >= 0 ? `   Target ${i + 1} / ${order.length}` : '';
+    return i >= 0 ? `   Target ${i + 1} / ${order.length}` : '';
   }
 
   private tileInfo(): string {
@@ -731,7 +732,7 @@ export default class BattleScene extends Phaser.Scene {
       if (v.heal || v.revives) {
         lines.push(`${u.name}: ${v.revives ? 'REVIVE, ' : ''}heal ${v.heal}  HP ${u.hp} → ${v.hpAfter}`);
       } else if (v.damage) {
-        lines.push(`${u.name}${u.team === getUnit(this.state, p.actorId).team ? ' (ally!)' : ''}`);
+        lines.push(`${shortName(u) !== u.name ? `${shortName(u)} · ` : ''}${u.name}${u.team === getUnit(this.state, p.actorId).team ? ' (ally!)' : ''}`);
         lines.push(`  ${t('ui.preview.hit')} ${v.hit}%   ${t('ui.preview.damage')} ${v.damage}   ${t('ui.preview.hpAfter')} ${u.hp} → ${v.hpAfter}${v.downs ? '  ☠' : ''}`);
         lines.push(`  ${tags}${v.pushedTo ? ' · pushed' : ''}`);
       } else {
@@ -1160,16 +1161,20 @@ export default class BattleScene extends Phaser.Scene {
     b.setDepth(r.depth);
     r.setFillStyle(0x000000, 0).setStrokeStyle();
     this.setSkin(b, state);
-    r.on('pointerover', () => { if (b.getData('base') === 'rest') setButtonState(b, 'hover'); });
+    r.on('pointerover', () => {
+      const base = b.getData('base') as ButtonState;
+      if (base === 'rest') setButtonState(b, 'hover');
+      else if (base === 'primary') setButtonState(b, 'primary-hover');
+    });
     r.on('pointerout', () => setButtonState(b, b.getData('base') as ButtonState));
     r.once('destroy', () => b.destroy());
     return b;
   }
 
   private setSkin(b: Phaser.GameObjects.NineSlice, state: ButtonState): void {
-    const hovered = b.getData('state') === 'hover';
+    const hovered = b.getData('state') === 'hover' || b.getData('state') === 'primary-hover';
     b.setData('base', state);
-    setButtonState(b, hovered && state === 'rest' ? 'hover' : state);
+    setButtonState(b, hovered && state === 'rest' ? 'hover' : hovered && state === 'primary' ? 'primary-hover' : state);
   }
 
   /** Master volume: click cycles 100/60/30/off; M mutes. Remembered between visits. */
