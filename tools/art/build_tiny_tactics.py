@@ -22,15 +22,34 @@ def src(name):
     return hits[0]
 
 
+def is_hair(r, g, b):
+    """The pack's pink/magenta hair ramp."""
+    import colorsys
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    return 0.85 <= h <= 0.99 and s > 0.4 and l > 0.25, l
+
+
+def hair_shade(ramp, l):
+    return ramp[0 if l < 0.42 else 1 if l < 0.58 else 2]
+
+
+SQUAD_HAIR = [(0x5A, 0x3A, 0x2E), (0x7E, 0x50, 0x38), (0xA8, 0x74, 0x4E)]  # chestnut
+COURT_HAIR = [(0x5E, 0x58, 0x4F), (0x7A, 0x73, 0x68), (0xA9, 0xAD, 0xA6)]  # cool grey (Art)
+
+
 def oathcourt(im):
     """Pale grey with gold trim: keep the dark outline, map light to pale grey,
-    and turn the pack's most saturated bright pixels (hair, trim) gold."""
+    hair to a cool grey ramp, and the pack's other saturated bright pixels (trim) gold."""
     im = im.convert('RGBA')
     px = im.load()
     for y in range(im.height):
         for x in range(im.width):
             r, g, b, a = px[x, y]
             if a == 0:
+                continue
+            hair, l = is_hair(r, g, b)
+            if hair:
+                px[x, y] = (*hair_shade(COURT_HAIR, l), a)
                 continue
             lum = 0.299 * r + 0.587 * g + 0.114 * b
             sat = max(r, g, b) - min(r, g, b)
@@ -47,18 +66,16 @@ def oathcourt(im):
 
 def chestnut_hair(im):
     """Squad hair: the pack's pink/magenta ramp becomes chestnut (Art), so it can't read as the crimson enemy cue."""
-    import colorsys
     im = im.convert('RGBA')
     px = im.load()
-    ramp = [(0x5A, 0x3A, 0x2E), (0x7E, 0x50, 0x38), (0xA8, 0x74, 0x4E)]
     for y in range(im.height):
         for x in range(im.width):
             r, g, b, a = px[x, y]
             if a == 0:
                 continue
-            h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-            if 0.85 <= h <= 0.99 and s > 0.4 and l > 0.25:
-                px[x, y] = (*ramp[0 if l < 0.42 else 1 if l < 0.58 else 2], a)
+            hair, l = is_hair(r, g, b)
+            if hair:
+                px[x, y] = (*hair_shade(SQUAD_HAIR, l), a)
     return im
 
 
