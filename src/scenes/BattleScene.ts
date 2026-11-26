@@ -316,13 +316,13 @@ export default class BattleScene extends Phaser.Scene {
   private get tokenH(): number { return this.art ? 62 : 47; }
   /**
    * Height the art shows a tile at, in levels: the river sits one level below its banks, and units on a
-   * ford wade with their feet 10 px below level 0 (Art README). Gameplay heights don't change.
+   * ford stand on the stones, feet 14 px below level 0 (Art). Gameplay heights don't change.
    */
   private drawH(p: Point): number {
     const t = tileAt(this.state.map, p);
     if (!t) return 0;
     if (!this.art || t.bridge) return t.height;
-    return t.kind === 'water' ? -1 : t.kind === 'ford' ? -10 / this.iso.step : t.height;
+    return t.kind === 'water' ? -1 : t.kind === 'ford' ? -14 / this.iso.step : t.height;
   }
 
   /** Stable variant pick from the world tile (rotation doesn't reshuffle the grass). */
