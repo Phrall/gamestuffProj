@@ -101,10 +101,11 @@ const BONE_EDGE = 0xede6d3;
 /** Range fills (UX v2.4, agreed with Art). */
 const RANGE = { move: 0x9fc3d6, attack: 0xc0533f, area: 0xe0876a } as const;
 
-/** Mill Ford decoration from Art's layout (tiles64/src/preview64.py). Props don't block anything. */
+/** Mill Ford decoration (Art's README, Director ruling): tall props stay off deploy tiles and main paths. Props don't block anything. */
 const MILL_FORD_PROPS: Record<string, string> = {
-  '0,0': 'pine_a', '9,0': 'pine_b', '9,9': 'pine_a', '0,9': 'bush_b', '8,3': 'bush_a', '1,3': 'reeds_b',
-  '5,3': 'reeds_a', '4,6': 'reeds_c', '9,6': 'reeds_b', '0,6': 'reeds_a', '8,8': 'bush_c', '2,0': 'pebbles_a',
+  '0,0': 'pine_a', '9,9': 'pine_a', '9,0': 'pine_b', '0,1': 'pine_b',
+  '0,3': 'reeds_a', '9,3': 'reeds_b', '0,6': 'reeds_c', '9,6': 'reeds_b',
+  '8,2': 'bush_a', '0,9': 'bush_b', '8,8': 'bush_c', '2,0': 'pebbles_a', '9,7': 'log_a',
 };
 
 export default class BattleScene extends Phaser.Scene {
@@ -117,6 +118,8 @@ export default class BattleScene extends Phaser.Scene {
   private hoverUnitId: string | null = null;
   private debug = false;
   private mapGfx: (Phaser.GameObjects.Graphics | Phaser.GameObjects.Image)[] = [];
+  /** Props and boulders (they're in mapGfx too); they fade when a unit stands behind them. */
+  private props: Phaser.GameObjects.Image[] = [];
   private barkRand: () => number = Math.random;
   private lastBarkAt: Record<string, number> = {};
   private wasShaken = false;
@@ -283,6 +286,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private drawMap(): void {
     const { map } = this.state;
+    this.props = [];
     for (const g of this.mapGfx) g.destroy();
     for (const g of this.overlays) g.destroy();
     this.mapGfx = [];
@@ -378,9 +382,9 @@ export default class BattleScene extends Phaser.Scene {
       this.terrain(frame, p.x, p.y, depth);
     }
     const c = tileCenter(this.iso, x, y, h);
-    if (kind === 'boulder') this.terrain(['boulder_a', 'boulder_b', 'boulder_c'][this.variant(x, y, 3)]!, c.x, c.y + 10, depth + 0.5, true);
+    if (kind === 'boulder') this.props.push(this.terrain(['boulder_a', 'boulder_b', 'boulder_c'][this.variant(x, y, 3)]!, c.x, c.y + 10, depth + 0.5, true).setData('tile', { x, y }));
     const prop = this.state.map.id === 'millFord' ? MILL_FORD_PROPS[`${x},${y}`] : undefined;
-    if (prop) this.terrain(prop, c.x, c.y + 12, depth + 0.5, true);
+    if (prop) this.props.push(this.terrain(prop, c.x, c.y + 12, depth + 0.5, true).setData('tile', { x, y }));
   }
 
   private makeUnitView(u: Unit): UnitView {
@@ -485,6 +489,27 @@ export default class BattleScene extends Phaser.Scene {
     g.fillStyle(col, 1).fillTriangle(tip.x, tip.y, rim.x + side.x, rim.y + side.y, rim.x - side.x, rim.y - side.y);
   }
 
+  /**
+   * Director (QA on #49): a prop drops to 40% while any unit, downed included, stands on a tile drawn
+   * behind it and the unit's body overlaps the prop on screen. Checked every frame, so walks and turns follow.
+   */
+  private fadeProps(): void {
+    if (!this.props.length) return;
+    const bodies = this.state.units.filter((u) => u.status !== 'lost').map((u) => {
+      const v = this.views.get(u.id);
+      const x = v ? v.root.x : 0, y = v ? v.root.y : 0;
+      const r = u.status === 'downed' ? new Phaser.Geom.Rectangle(x - 24, y - 24, 48, 28) : new Phaser.Geom.Rectangle(x - 16, y - 56, 32, 58);
+      return { d: depthOf(this.iso, u.pos.x, u.pos.y), r };
+    });
+    for (const img of this.props) {
+      const t = img.getData('tile') as Point;
+      const d = depthOf(this.iso, t.x, t.y);
+      const b = img.getBounds();
+      const behind = bodies.some((o) => o.d < d && Phaser.Geom.Intersects.RectangleToRectangle(o.r, b));
+      img.setAlpha(behind ? 0.4 : 1);
+    }
+  }
+
   /** The over layer follows the body's position, fade and visibility (tweens move only the body). */
   private syncOver(v: UnitView): void {
     v.over.setPosition(v.root.x, v.root.y).setAlpha(v.root.alpha).setVisible(v.root.visible);
@@ -509,6 +534,7 @@ export default class BattleScene extends Phaser.Scene {
       if (this.targetMark.getData('frame') !== f) { this.targetMark.setData('frame', f); draw(CURSOR.pulse[f]!); }
     }
     const bob = Math.floor(time / 400) % 2 ? -2 : 0; // active ▼: 2 frames, 400 ms (UX §4)
+    this.fadeProps();
     for (const v of this.views.values()) {
       this.syncOver(v);
       this.syncSilhouette(v);
@@ -1777,6 +1803,30 @@ export default class BattleScene extends Phaser.Scene {
     return { x: (w.x - c.scrollX - c.width / 2) * c.zoom + c.width / 2, y: (w.y - c.scrollY - c.height / 2) * c.zoom + c.height / 2 };
   }
 
+  /**
+   * Director (QA on #49): keep the active unit and the current target out from under the timeline and HUD
+   * panels. If either body leaves the safe area, pan so both sit in it (clamped to the map).
+   */
+  private keepClear(): void {
+    const u = activeUnit(this.state);
+    if (!u) return;
+    const pts = [u.pos];
+    if (this.mode.kind === 'target' && this.mode.selected) pts.push(this.mode.selected);
+    const ls = layoutScale();
+    const { w: W, h: H } = screenLp();
+    const z = this.cameras.main.zoom;
+    const out = pts.some((p) => {
+      const c = this.toScreen(tileCenter(this.iso, p.x, p.y, this.drawH(p)));
+      const top = (c.y - 60 * z) / ls, bottom = (c.y + 12 * z) / ls, l = (c.x - 20 * z) / ls, r = (c.x + 20 * z) / ls;
+      return top < X(50) || bottom > X(H - 117) || l < 0 || r > X(W);
+    });
+    if (!out) return;
+    const ws = pts.map((p) => tileCenter(this.iso, p.x, p.y, this.drawH(p)));
+    const mid = { x: ws.reduce((a, w) => a + w.x, 0) / ws.length, y: ws.reduce((a, w) => a + w.y, 0) / ws.length - 20 };
+    const to = this.scrollToSafe(this.clampToMap(mid));
+    this.tweens.add({ targets: this.cameras.main, scrollX: to.x, scrollY: to.y, duration: 200, ease: 'Sine.easeInOut' });
+  }
+
   private centerOnActive(animate = false): void {
     const u = activeUnit(this.state);
     if (!u) return;
@@ -1833,6 +1883,7 @@ export default class BattleScene extends Phaser.Scene {
     const p = this.input.activePointer;
     this.hover = this.onBoard(p) ? this.pick(this.cameras.main.getWorldPoint(p.x, p.y)) : this.hover;
     this.refresh();
+    this.keepClear();
   }
 
   private drawCompass(): void {
@@ -1957,6 +2008,7 @@ export default class BattleScene extends Phaser.Scene {
     this.hoverUnitId = occupant(this.state, p)?.id ?? null;
     if (pan) this.panTo(p);
     this.refresh();
+    this.keepClear();
   }
 
   /** Second step: Enter, Space, the Confirm button or a click on the selection. */
@@ -2137,6 +2189,7 @@ export default class BattleScene extends Phaser.Scene {
     }
     this.placeUnit(u, u.pos);
     this.refresh();
+    if (this.state.activeId === u.id) this.keepClear();
   }
 
   private floatText(u: Unit, s: string, color: string): void {
