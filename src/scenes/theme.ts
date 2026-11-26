@@ -27,4 +27,4 @@ export const COLORS = {
 export const FONT = 'monospace';
 
 /** Faction cue (Director): one ring colour per side, darker than the move and attack highlights. */
-export const FACTION = { squad: 0x4f7fa8, squadHex: '#4f7fa8', court: 0xa3333d, courtHex: '#a3333d' } as const;
+export const FACTION = { squad: 0x3b6a96, squadHex: '#3b6a96', court: 0xa3333d, courtHex: '#a3333d', edge: 0x2a2420, badgeText: '#ede6d3' } as const;

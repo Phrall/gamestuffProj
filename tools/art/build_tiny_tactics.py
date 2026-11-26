@@ -45,11 +45,28 @@ def oathcourt(im):
     return im
 
 
+def chestnut_hair(im):
+    """Squad hair: the pack's pink/magenta ramp becomes chestnut (Art), so it can't read as the crimson enemy cue."""
+    import colorsys
+    im = im.convert('RGBA')
+    px = im.load()
+    ramp = [(0x5A, 0x3A, 0x2E), (0x7E, 0x50, 0x38), (0xA8, 0x74, 0x4E)]
+    for y in range(im.height):
+        for x in range(im.width):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                continue
+            h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+            if 0.85 <= h <= 0.99 and s > 0.4 and l > 0.25:
+                px[x, y] = (*ramp[0 if l < 0.42 else 1 if l < 0.58 else 2], a)
+    return im
+
+
 for body in ('fighter', 'mage', 'cleric'):
     for face in ('NE', 'SE'):
         for kind in ('walking', 'attack', 'dead', 'weak', 'damage', 'release'):
             name = f'{body}-{kind}{face}.png'
-            shutil.copy(src(name), os.path.join(out, name))
+            chestnut_hair(Image.open(src(name))).save(os.path.join(out, name))
             if body in ('fighter', 'cleric'):
                 oathcourt(Image.open(src(name))).save(os.path.join(out, f'{body}_oc-{kind}{face}.png'))
 
