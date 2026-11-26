@@ -25,3 +25,6 @@ export const COLORS = {
 };
 
 export const FONT = 'monospace';
+
+/** Faction cue (Director): one ring colour per side, darker than the move and attack highlights. */
+export const FACTION = { squad: 0x4f7fa8, squadHex: '#4f7fa8', court: 0xa3333d, courtHex: '#a3333d' } as const;
