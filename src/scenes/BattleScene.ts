@@ -230,7 +230,7 @@ export default class BattleScene extends Phaser.Scene {
         const t = tileAt(map, { x, y })!;
         const d0 = depthOf(this.iso, x, y) * 10;
         if (this.art) {
-          this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0, t.kind === 'water' ? this.waterFrame(x, y) : undefined);
+          this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0, t.kind === 'water' ? this.waterFrame(x, y) : t.kind === 'ford' ? WATER_FOAM['']! : undefined);
           this.overlays.push(this.add.graphics().setDepth(d0 + 1));
           continue;
         }
@@ -302,6 +302,8 @@ export default class BattleScene extends Phaser.Scene {
       // Visual only; the tile keeps its gameplay height.
       const img = this.add.image(left, surfaceTop, 'tileset', waterFrame).setOrigin(0).setScale(S).setDepth(depth);
       this.mapGfx.push(img);
+      // Ford (Art): the same water with grey stepping stones on it, so the river is crossed, not cut.
+      if (kind === 'ford') this.mapGfx.push(this.add.image(left, surfaceTop, 'tileset', TILE.stones).setOrigin(0).setScale(S).setDepth(depth + 0.5));
       return;
     }
     for (const b of blocks.reverse()) {

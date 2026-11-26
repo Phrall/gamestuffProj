@@ -83,6 +83,7 @@ export const TILE = {
   waterFull: 32, waterHalf: 33,
   bridgeHalf: 85,
   rock: 64,
+  stones: 80, // (0,5): small grey rocks, the ford's stepping stones
 } as const;
 
 /**
