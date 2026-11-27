@@ -269,7 +269,8 @@
     "hardToKill": {
       "from": "sellsword",
       "rank": 3,
-      "effect": "Once per battle, a hit that would down this unit leaves it at 1 HP instead."
+      "effect": "Once per battle, a hit that would down this unit leaves it at 1 HP instead, if the unit had at least minPct% of its max HP before the hit. Hits only, not Ember ticks.",
+      "minPct": 20
     },
     "sureFooting": {
       "from": "bowhand",
@@ -355,7 +356,7 @@
   "vowRisk": {
     "bulwark": {
       "breakableByEnemy": true,
-      "predicate": "an enemy attack previewed this turn could down an ally within breakRadius (3) of the sworn unit"
+      "predicate": "an enemy attack previewed this turn could down an ally within breakRadius (2) of the sworn unit"
     },
     "loneBlade": {
       "breakableByEnemy": false

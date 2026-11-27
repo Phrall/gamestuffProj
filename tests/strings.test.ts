@@ -54,7 +54,7 @@ describe('strings: every ui placeholder fills from data (QA S2/S3)', () => {
     for (const id of Object.keys(lookup('ui.abilities') as object)) check(`ui.abilities.${id}.tooltip`, abilityParams(id, 8));
     for (const tier of ['shaken', 'steady', 'inspired']) check(`ui.morale.${tier}.tooltip`, moraleParams(tier));
     expect(leftovers).toEqual([]);
-    expect(t('ui.vows.bulwark.summary', vowParams('bulwark'))).toBe('Guard an ally from 1 attack, and let no ally within 3 tiles fall.');
+    expect(t('ui.vows.bulwark.summary', vowParams('bulwark'))).toBe('Guard an ally from 1 attack, and let no ally within 2 tiles fall.');
     expect(t('ui.abilities.mend.tooltip', abilityParams('mend', 8))).toContain('for 8 HP');
     expect(t('ui.abilities.pinningArrow.tooltip', abilityParams('pinningArrow'))).toContain('loses 2 Move');
   });

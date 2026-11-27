@@ -1,5 +1,5 @@
 {
-  "version": "1.10",
+  "version": "1.11",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -97,7 +97,7 @@
       "goal": 1,
       "progress": "interceptedAttack",
       "breakOn": "allyDownedWithin",
-      "breakRadius": 3,
+      "breakRadius": 2,
       "whileSworn": {
         "guard": true
       },
