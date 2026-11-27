@@ -827,15 +827,16 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
-  /** "Spear A reach · Move 4 · Thrust 1–2 straight" (UX slice §2). */
+  /** "Reach: Move 4 · Spear Thrust 1–2" (UX review of #52): one line, the longest-range ability plus "+n" for the rest. */
   private reachLine(u: Unit): string {
     const r = this.danger().reaches.find((x) => x.unitId === u.id);
-    const abil = (r?.abilities ?? []).map((id) => {
-      const a = ABILITIES[id]!;
-      const [min, max] = a.range ?? [0, 0];
-      return `${abilityLabel(id)} ${min === max ? max : `${min}–${max}`}${a.straightLine ? ' straight' : ''}`;
-    });
-    return [`${shortName(u)} reach`, `Move ${effectiveStats(this.state, u).move}`, ...abil].join(' · ');
+    const ids = [...(r?.abilities ?? [])].sort((a, b) => (ABILITIES[b]!.range?.[1] ?? 0) - (ABILITIES[a]!.range?.[1] ?? 0));
+    const parts = [`Reach: Move ${effectiveStats(this.state, u).move}`];
+    if (ids.length) {
+      const [min, max] = ABILITIES[ids[0]!]!.range ?? [0, 0];
+      parts.push(`${abilityLabel(ids[0]!)} ${min === max ? max : `${min}–${max}`}${ids.length > 1 ? ` +${ids.length - 1}` : ''}`);
+    }
+    return parts.join(' · ');
   }
 
   private toggleDanger(): void {
@@ -1386,7 +1387,9 @@ export default class BattleScene extends Phaser.Scene {
     } else {
       const hu = this.hover ? occupant(this.state, this.hover) : this.hoverUnitId ? getUnit(this.state, this.hoverUnitId) : undefined;
       const reach = hu && hu.team === 'enemy' && hu.status === 'ok' && a?.team === 'player' ? [this.reachLine(hu)] : [];
-      v = hu && hu.id !== a?.id ? { head: `${hu.name} · ${this.className(hu)}`, lines: [...reach, `HP ${hu.hp}/${hu.base.hp}`, ...this.unitLines(hu)] } : this.tileView();
+      // Same header as the target preview (#43): "Spear A · Court Spearman" where a short name exists.
+      const head = hu ? (shortName(hu) !== hu.name ? `${shortName(hu)} · ${hu.name}` : `${hu.name} · ${this.className(hu)}`) : '';
+      v = hu && hu.id !== a?.id ? { head, lines: [...reach, `HP ${hu.hp}/${hu.base.hp}`, ...this.unitLines(hu)] } : this.tileView();
     }
     this.showPanel(v);
   }
