@@ -118,7 +118,9 @@ export function resolveVowsAtEnd(state: BattleState): void {
     if (v.status !== 'intact') continue;
     // Kept at the end fires the same event and +10 morale as an early Kept, for the Reckoning.
     const u = state.units.find((x) => state.vows[x.id] === v);
-    if (v.progress >= v.goal && u) fulfil(state, u, v);
+    // Director ruling (Nov 27, replaces QA ruling 3): a frozen vow is Kept only if its unit is standing at the end.
+    if (v.frozen && u && u.status !== 'ok') v.status = 'lapsed';
+    else if (v.progress >= v.goal && u) fulfil(state, u, v);
     else v.status = 'lapsed';
   }
 }

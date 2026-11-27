@@ -63,7 +63,7 @@ describe('Bulwark (§9)', () => {
     expect(s.morale.player).toBe(60);
   });
 
-  it('a frozen Held vow cannot break and is Kept at battle end; a frozen 0/1 lapses (UX ruling 3)', () => {
+  it('a frozen Held vow lapses if its unit is down at battle end, and is Kept if revived; a frozen 0/1 lapses (v1.10)', () => {
     const s = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('calla', 'player', 'hedgeMage', 1, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
     swearVow(s, 'maren', 'bulwark');
     s.vows.maren!.progress = 1;
@@ -72,7 +72,14 @@ describe('Bulwark (§9)', () => {
     getUnit(s, 'calla').status = 'downed';
     getUnit(s, 'e').status = 'lost';
     startNextTurn(s);
-    expect(s.vows.maren!.status).toBe('fulfilled');
+    expect(s.vows.maren!.status).toBe('lapsed'); // Director ruling Nov 27: down at the end means Lapsed
+    const r = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
+    swearVow(r, 'maren', 'bulwark');
+    r.vows.maren!.progress = 1;
+    r.vows.maren!.frozen = true; // frozen while down, then revived: standing at the end
+    getUnit(r, 'e').status = 'lost';
+    startNextTurn(r);
+    expect(r.vows.maren!.status).toBe('fulfilled');
     const s2 = battle(flatRows(6, 1), [unit('maren', 'player', 'sellsword', 0, 0), unit('e', 'enemy', 'sellsword', 5, 0)]);
     swearVow(s2, 'maren', 'bulwark');
     s2.vows.maren!.frozen = true;
