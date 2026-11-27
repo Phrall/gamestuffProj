@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { endTurn, getUnit, startNextTurn, useAbility } from '../src/core/battle';
 import { planTurn } from '../src/core/ai';
 import { hitChance, previewAction, targetTiles } from '../src/core/combat';
-import { guardianFor, swearVow } from '../src/core/vows';
+import { bulwarkReach, guardianFor, swearVow } from '../src/core/vows';
 import { ABILITIES, CLASSES, deriveStats } from '../src/data';
 import { abilitiesAtRank } from '../src/core/jobs';
 import { battle, flatRows, unit } from './helpers';
@@ -100,6 +100,23 @@ describe('slice abilities', () => {
     startNextTurn(s);
     useAbility(s, 'm', 'holdTheLine', { x: 0, y: 0 });
     expect(guardianFor(s, atk, w)?.id).toBe('m');
+    expect(bulwarkReach(getUnit(s, 'm'))).toBe(3);
+  });
+
+  it('the Bulwark break radius follows Guard reach: an ally 3 tiles away breaks it during Hold the Line', () => {
+    const s = battle(flatRows(6, 1), [
+      unit('m', 'player', 'warden', 0, 0, 'E', { stats: { ...deriveStats('warden', 3), ...fast } }),
+      unit('w', 'player', 'bowhand', 3, 0, 'E', dummy({ hp: 1 })),
+      unit('e', 'enemy', 'hedgeMage', 5, 0, 'W', { ...dummy({ spd: 11, mag: 30 }), abilities: ['thornsnare'] }),
+    ]);
+    swearVow(s, 'm', 'bulwark');
+    startNextTurn(s);
+    useAbility(s, 'm', 'holdTheLine', { x: 0, y: 0 });
+    endTurn(s);
+    startNextTurn(s);
+    useAbility(s, 'e', 'thornsnare', { x: 3, y: 0 }); // area: Guard can't take it
+    expect(getUnit(s, 'w').status).toBe('downed');
+    expect(s.vows.m!.status).toBe('broken');
   });
 
   it('Challenge: the target must attack the Warden next turn if it can', () => {
