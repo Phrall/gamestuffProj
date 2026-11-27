@@ -16,6 +16,7 @@ import { LP, RESCALE, canvasSize, fitCamera, layoutScale, layoutSize, mapHome, m
 import { abilityName, abilityParams, abilityShort, bark, lookup, moraleParams, scene, t, unitName, unitShort, vowName, vowParams } from '../data/strings';
 import { playDialogue } from './dialogue';
 import { mulberry32 } from '../core/rng';
+import { dangerZone, type Reach } from '../core/threat';
 import { SIGILS, TERRAIN, UNITS48, UNIT48_ORIGIN, face, unit48, guiButton, guiPanel, hasArt, hudImage, hudPanel, hudPlate, hudTab, setButtonState, setTabFrame, type ButtonState, type TabFrame } from '../art';
 import { abilitySound, buttonSounds, cycleVolume, initVolume, isAttack, playMusic, sfx, sting, toggleMute, volumeLabel } from '../audio';
 
@@ -98,6 +99,11 @@ const text = (scene: Phaser.Scene, x: number, y: number, s: string, size = 14, c
 
 /** Bone edge on rings and the move range boundary (UX v2.2). */
 const BONE_EDGE = 0xede6d3;
+/** Danger zone toggle (UX slice §1): off at launch, then kept for the session, across battles. */
+let dangerOn = false;
+/** Danger hatch and boundary colour (UX slice §1). */
+const DANGER = 0xa33a26;
+
 /** Range fills (UX v2.4, agreed with Art). */
 const RANGE = { move: 0x9fc3d6, attack: 0xc0533f, area: 0xe0876a } as const;
 
@@ -112,6 +118,13 @@ export default class BattleScene extends Phaser.Scene {
   state!: BattleState;
   private iso: IsoConfig = { originX: 640, originY: 150, tileW: 64, tileH: 32, step: 16 };
   private overlays: Phaser.GameObjects.Graphics[] = [];
+  /** Per tile, above the fills: the danger hatch (UX slice §1 layer order). */
+  private hatches: Phaser.GameObjects.Graphics[] = [];
+  /** Per tile, above the hatch: range outlines, boundaries and tile marks. */
+  private lines: Phaser.GameObjects.Graphics[] = [];
+  private dangerCache: { sig: string; zone: { tiles: Point[]; reaches: Reach[] } } | null = null;
+  private dangerChip: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } | null = null;
+  private shiftKey: Phaser.Input.Keyboard.Key | null = null;
   private views = new Map<string, UnitView>();
   private mode: Mode = { kind: 'busy' };
   private hover: Point | null = null;
@@ -284,20 +297,29 @@ export default class BattleScene extends Phaser.Scene {
 
   // ---------- map and units ----------
 
+  /** Fills, then the danger hatch, then outlines and marks, all above the tile and below its units. */
+  private addOverlays(d0: number): void {
+    this.overlays.push(this.add.graphics().setDepth(d0 + 1));
+    this.hatches.push(this.add.graphics().setDepth(d0 + 1.1));
+    this.lines.push(this.add.graphics().setDepth(d0 + 1.2));
+  }
+
   private drawMap(): void {
     const { map } = this.state;
     this.props = [];
     for (const g of this.mapGfx) g.destroy();
-    for (const g of this.overlays) g.destroy();
+    for (const g of [...this.overlays, ...this.hatches, ...this.lines]) g.destroy();
     this.mapGfx = [];
     this.overlays = [];
+    this.hatches = [];
+    this.lines = [];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         const t = tileAt(map, { x, y })!;
         const d0 = depthOf(this.iso, x, y) * 10;
         if (this.art) {
           this.drawTileArt(x, y, t.bridge ? 'bridge' : t.kind, t.height, d0);
-          this.overlays.push(this.add.graphics().setDepth(d0 + 1));
+          this.addOverlays(d0);
           continue;
         }
         const g = this.add.graphics().setDepth(d0);
@@ -314,7 +336,7 @@ export default class BattleScene extends Phaser.Scene {
           const c = tileCenter(this.iso, x, y, t.height);
           g.fillStyle(COLORS.boulder).fillEllipse(c.x, c.y - 8, 34, 26);
         }
-        this.overlays.push(this.add.graphics().setDepth(d0 + 1));
+        this.addOverlays(d0);
       }
     }
   }
@@ -685,18 +707,150 @@ export default class BattleScene extends Phaser.Scene {
   private rangeEdge(tiles: Point[]): void {
     const set = new Set(tiles.map(key));
     for (const p of tiles) {
-      const g = this.overlays[p.y * this.state.map.width + p.x];
+      const g = this.lines[p.y * this.state.map.width + p.x];
       if (!g) continue;
-      const [n, e, s, w] = topDiamond(this.iso, p.x, p.y, this.drawH(p)) as [Vec, Vec, Vec, Vec];
-      for (const d of [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }]) {
-        if (set.has(key({ x: p.x + d.x, y: p.y + d.y }))) continue;
-        const sd = screenDir(this.iso, d);
-        const [a, b] = sd.y < 0 ? (sd.x < 0 ? [w, n] : [n, e]) : sd.x > 0 ? [e, s] : [s, w];
-        const o = { x: Math.sign(sd.x), y: Math.sign(sd.y) };
+      for (const [a, b, o] of this.outerEdges(p, set)) {
         g.lineStyle(1, BONE_EDGE, 1).lineBetween(a.x + o.x, a.y + o.y, b.x + o.x, b.y + o.y);
         g.lineStyle(1, MARK.edge, 1).lineBetween(a.x, a.y, b.x, b.y);
       }
     }
+  }
+
+  /** Screen edges of tile p whose neighbour is outside `set`, with the outward unit offset. */
+  private outerEdges(p: Point, set: Set<string>): [Vec, Vec, Vec][] {
+    const [n, e, s, w] = topDiamond(this.iso, p.x, p.y, this.drawH(p)) as [Vec, Vec, Vec, Vec];
+    const out: [Vec, Vec, Vec][] = [];
+    for (const d of [{ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }]) {
+      if (set.has(key({ x: p.x + d.x, y: p.y + d.y }))) continue;
+      const sd = screenDir(this.iso, d);
+      const [a, b] = sd.y < 0 ? (sd.x < 0 ? [w, n] : [n, e]) : sd.x > 0 ? [e, s] : [s, w];
+      out.push([a, b, { x: Math.sign(sd.x), y: Math.sign(sd.y) }]);
+    }
+    return out;
+  }
+
+  /** Danger region boundary (UX slice §1): 2 px #A33A26, 1 px dark just outside; never bone. */
+  private dangerEdge(tiles: Point[], alpha: number): void {
+    const set = new Set(tiles.map(key));
+    for (const p of tiles) {
+      const g = this.lines[p.y * this.state.map.width + p.x];
+      if (!g) continue;
+      for (const [a, b, o] of this.outerEdges(p, set)) {
+        g.lineStyle(1, MARK.edge, alpha).lineBetween(a.x + o.x * 1.5, a.y + o.y * 1.5, b.x + o.x * 1.5, b.y + o.y * 1.5);
+        g.lineStyle(2, DANGER, alpha).lineBetween(a.x, a.y, b.x, b.y);
+      }
+    }
+  }
+
+  /**
+   * Danger hatch on one tile top (UX slice §1): stripes running down-right at 45 degrees, 8 px apart in
+   * world space so they line up across tiles; 2 px #A33A26 at 85% with a 1 px bone line at 50% below it.
+   */
+  private hatch(p: Point, alpha: number): void {
+    const g = this.hatches[p.y * this.state.map.width + p.x];
+    if (!g) return;
+    const d = topDiamond(this.iso, p.x, p.y, this.drawH(p));
+    const xs = d.map((q) => q.x), ys = d.map((q) => q.y);
+    const lo = Math.min(...ys) - Math.max(...xs), hi = Math.max(...ys) - Math.min(...xs);
+    const clip = (k: number): [Vec, Vec] | null => {
+      // Line y = x + k against the diamond's four edges.
+      const hits: Vec[] = [];
+      for (let i = 0; i < 4; i++) {
+        const a = d[i]!, b = d[(i + 1) % 4]!;
+        const den = (b.y - a.y) - (b.x - a.x);
+        if (Math.abs(den) < 1e-9) continue;
+        const t = (a.x + k - a.y) / den;
+        if (t >= 0 && t <= 1) hits.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
+      if (hits.length < 2) return null;
+      hits.sort((m, n) => m.x - n.x);
+      return [hits[0]!, hits[hits.length - 1]!];
+    };
+    for (let k = Math.ceil(lo / 8) * 8; k <= hi; k += 8) {
+      const red = clip(k), bone = clip(k + 1.5);
+      if (bone) g.lineStyle(1, BONE_EDGE, 0.5 * alpha).lineBetween(bone[0].x, bone[0].y, bone[1].x, bone[1].y);
+      if (red) g.lineStyle(2, DANGER, 0.85 * alpha).lineBetween(red[0].x, red[0].y, red[1].x, red[1].y);
+    }
+  }
+
+  /** Dashed 1 px tile outline (UX slice §2: a hovered enemy's move tiles), 4 on, 3 off. */
+  private dashed(p: Point): void {
+    const g = this.lines[p.y * this.state.map.width + p.x];
+    if (!g) return;
+    const d = topDiamond(this.iso, p.x, p.y, this.drawH(p));
+    g.lineStyle(1, DANGER, 1);
+    for (let i = 0; i < 4; i++) {
+      const a = d[i]!, b = d[(i + 1) % 4]!;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      for (let s0 = 0; s0 < len; s0 += 7) {
+        const s1 = Math.min(len, s0 + 4);
+        g.lineBetween(a.x + ((b.x - a.x) * s0) / len, a.y + ((b.y - a.y) * s0) / len, a.x + ((b.x - a.x) * s1) / len, a.y + ((b.y - a.y) * s1) / len);
+      }
+    }
+  }
+
+  /** The danger zone for the current state, recomputed only when units or cooldowns change. */
+  private danger(): { tiles: Point[]; reaches: Reach[] } {
+    const sig = this.state.units.map((u) => `${u.id}:${u.pos.x},${u.pos.y}:${u.status}:${JSON.stringify(u.cooldowns)}:${u.modifiers.length}:${u.moraleMove}`).join('|');
+    if (this.dangerCache?.sig !== sig) this.dangerCache = { sig, zone: dangerZone(this.state) };
+    return this.dangerCache.zone;
+  }
+
+  /** The enemy whose reach to show: hovered, with no ability armed (or Shift held while one is). */
+  private reachUnit(): Unit | undefined {
+    const hu = this.hoverUnitId ? getUnit(this.state, this.hoverUnitId) : this.hover ? occupant(this.state, this.hover) : undefined;
+    if (!hu || hu.team !== 'enemy' || hu.status !== 'ok') return undefined;
+    if (this.mode.kind === 'target' && !this.shiftKey?.isDown) return undefined;
+    return hu;
+  }
+
+  /** Danger zone and hover reach (UX slice §1–2), on the player's turn only. */
+  private drawDanger(): void {
+    const u = activeUnit(this.state);
+    if (!u || u.team !== 'player' || this.mode.kind === 'busy' || this.mode.kind === 'deploy') return;
+    const zone = this.danger();
+    const ru = this.reachUnit();
+    const reach = ru ? zone.reaches.find((r) => r.unitId === ru.id) : undefined;
+    const armed = this.mode.kind === 'target';
+    if (dangerOn) {
+      const a = armed ? 0.4 : reach ? 0.35 : 1;
+      const mine = new Set(reach ? reach.hit.map(key) : []);
+      for (const p of zone.tiles) if (!mine.has(key(p))) this.hatch(p, a);
+      this.dangerEdge(zone.tiles, a);
+    }
+    if (reach) {
+      const moves = new Set(reach.move.map(key));
+      for (const p of reach.move) this.dashed(p);
+      for (const p of reach.hit) if (!moves.has(key(p))) this.hatch(p, 1);
+      const all = new Map([...reach.hit, ...reach.move].map((p) => [key(p), p]));
+      this.dangerEdge([...all.values()], 1);
+    }
+  }
+
+  /** "Spear A reach · Move 4 · Thrust 1–2 straight" (UX slice §2). */
+  private reachLine(u: Unit): string {
+    const r = this.danger().reaches.find((x) => x.unitId === u.id);
+    const abil = (r?.abilities ?? []).map((id) => {
+      const a = ABILITIES[id]!;
+      const [min, max] = a.range ?? [0, 0];
+      return `${abilityLabel(id)} ${min === max ? max : `${min}–${max}`}${a.straightLine ? ' straight' : ''}`;
+    });
+    return [`${shortName(u)} reach`, `Move ${effectiveStats(this.state, u).move}`, ...abil].join(' · ');
+  }
+
+  private toggleDanger(): void {
+    dangerOn = !dangerOn;
+    sfx(this, 'ui_click');
+    this.styleDangerChip();
+    this.refresh();
+  }
+
+  /** Chip look (UX slice §1): off is a dark plate with grey text; on is #A33A26 with bone text and a dark edge. */
+  private styleDangerChip(): void {
+    const c = this.dangerChip;
+    if (!c) return;
+    c.bg.setFillStyle(dangerOn ? DANGER : 0x1f1e1b, dangerOn ? 1 : 0.75).setStrokeStyle(X(1), MARK.edge, dangerOn ? 1 : 0);
+    c.label.setColor(dangerOn ? BONE : '#c9c7c1');
   }
 
   private drawSigil(u: Unit, v: UnitView): void {
@@ -856,6 +1010,15 @@ export default class BattleScene extends Phaser.Scene {
     this.hudButton(c.x + 92, by, 16, { key: 'gui-more', glyph: '+', tip: `${t('ui.camera.zoomIn')} (+)`, fn: () => this.zoomStep(1) });
     this.hudButton(c.x + 110, by, 16, { key: 'gui-centre', glyph: '◎', tip: `${t('ui.camera.center')} (C)`, fn: () => this.centerOnActive(true) });
     this.drawCompass();
+
+    // Danger toggle chip (UX slice §1): 64x16 lp, right-aligned just above the camera cluster.
+    const dbg = this.add.rectangle(X(W - 68), X(H - 148), X(64), X(16), 0x1f1e1b, 0.75).setOrigin(0).setDepth(1000).setInteractive({ useHandCursor: true });
+    const dlabel = text(this, X(W - 36), X(H - 140), '◈ Danger  T', 12, '#c9c7c1').setOrigin(0.5).setDepth(1001);
+    dbg.on('pointerover', () => this.setHint('Danger zone: every tile an enemy could hit next turn (T)'));
+    dbg.on('pointerout', () => this.refreshHint());
+    dbg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => { ev.stopPropagation(); this.toggleDanger(); });
+    this.dangerChip = { bg: dbg, label: dlabel };
+    this.styleDangerChip();
 
     this.hudObjs = this.children.list.filter((o) => !before.has(o));
     this.rebuildButtons();
@@ -1222,7 +1385,8 @@ export default class BattleScene extends Phaser.Scene {
       v = { head, lines };
     } else {
       const hu = this.hover ? occupant(this.state, this.hover) : this.hoverUnitId ? getUnit(this.state, this.hoverUnitId) : undefined;
-      v = hu && hu.id !== a?.id ? { head: `${hu.name} · ${this.className(hu)}`, lines: [`HP ${hu.hp}/${hu.base.hp}`, ...this.unitLines(hu)] } : this.tileView();
+      const reach = hu && hu.team === 'enemy' && hu.status === 'ok' && a?.team === 'player' ? [this.reachLine(hu)] : [];
+      v = hu && hu.id !== a?.id ? { head: `${hu.name} · ${this.className(hu)}`, lines: [...reach, `HP ${hu.hp}/${hu.base.hp}`, ...this.unitLines(hu)] } : this.tileView();
     }
     this.showPanel(v);
   }
@@ -1378,13 +1542,13 @@ export default class BattleScene extends Phaser.Scene {
 
   /** Redraw tile highlights for the current mode and hover. */
   private refreshOverlays(): ActionPreview | null {
-    for (const g of this.overlays) g.clear();
+    for (const g of [...this.overlays, ...this.hatches, ...this.lines]) g.clear();
     this.targetMark.clear().setData('draw', null).setData('frame', -1);
     this.movePv = null;
     const u = activeUnit(this.state);
     let preview: ActionPreview | null = null;
     const paint = (p: Point, color: number, alpha: number, stroke = false, width = 2) => {
-      const g = this.overlays[p.y * this.state.map.width + p.x];
+      const g = (stroke ? this.lines : this.overlays)[p.y * this.state.map.width + p.x];
       if (!g) return;
       const d = topDiamond(this.iso, p.x, p.y, this.drawH(p));
       if (stroke) g.lineStyle(width, color, alpha).strokePoints(d, true);
@@ -1394,7 +1558,7 @@ export default class BattleScene extends Phaser.Scene {
     const range = (p: Point, color: number, alpha: number) => { paint(p, color, alpha); paint(p, color, 0.6, true, 1); };
     /** UX §4: 2 lp of colour with a 1 lp dark edge (1 lp = 2 layout units at map zoom 1). */
     const mark = (p: Point, color: number, brackets = false, into?: Phaser.GameObjects.Graphics) => {
-      const g = into ?? this.overlays[p.y * this.state.map.width + p.x];
+      const g = into ?? this.lines[p.y * this.state.map.width + p.x];
       if (!g) return;
       const d = topDiamond(this.iso, p.x, p.y, this.drawH(p));
       // Same family as the GUI frames (Art): the cursor sheet's navy drop edge, 1 lp lower, under a 2 lp line.
@@ -1484,6 +1648,7 @@ export default class BattleScene extends Phaser.Scene {
         }
       }
     }
+    this.drawDanger();
     // Active unit's tile: bone outline and a 30% bone fill; hover: bone outline only (UX §4).
     if (u && u.status === 'ok') { paint(u.pos, MARK.bone, 0.3); mark(u.pos, MARK.bone); }
     const sel = this.mode.kind === 'target' ? this.mode.selected : undefined;
@@ -1596,6 +1761,9 @@ export default class BattleScene extends Phaser.Scene {
       if (this.onBoard(p)) this.zoomStep(dy > 0 ? -1 : 1, p);
     });
     const kb = this.input.keyboard!;
+    // Shift shows a hovered enemy's reach while an ability is armed (UX slice §2).
+    this.shiftKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT, false);
+    kb.on('keyup-SHIFT', () => { if (this.mode.kind === 'target') this.refresh(); });
     kb.on('keydown', (e: KeyboardEvent) => {
       if (this.overlayKind) {
         if (this.overlayKind === 'pause' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -1620,6 +1788,8 @@ export default class BattleScene extends Phaser.Scene {
       else if (e.key === '+' || e.key === '=') this.zoomStep(1);
       else if (e.key === '-' || e.key === '_') this.zoomStep(-1);
       else if (e.key === 'c' || e.key === 'C') this.centerOnActive();
+      else if (e.key === 't' || e.key === 'T') this.toggleDanger();
+      else if (e.key === 'Shift' && this.mode.kind === 'target') this.refresh();
       else if (this.mode.kind !== 'facing' && e.key.startsWith('Arrow')) {
         const cam = this.cameras.main;
         const step = (48 * layoutScale()) / cam.zoom;
