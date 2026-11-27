@@ -1,4 +1,6 @@
-import { RULES } from '../data';
+import { RULES, SLICE } from '../data';
+
+const MARSH_COST = SLICE.movement.marshCost;
 import type { BattleState } from './battle';
 import { heightAt, isPassable, key, neighbors, tileAt } from './grid';
 import { effectiveStats } from './stats';
@@ -20,6 +22,7 @@ export function stepCost(state: BattleState, unit: Unit, a: Point, b: Point): nu
   if (dh > s.jump) return null;
   if (-dh > s.jump + RULES.movement.dropAllowance) return null;
   if (to!.kind === 'ford') return RULES.movement.fordCost;
+  if (to!.kind === 'marsh') return MARSH_COST;
   return 1 + (s.freeClimb ? 0 : Math.max(0, dh));
 }
 

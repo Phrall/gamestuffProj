@@ -7,7 +7,8 @@ export type Side = 'front' | 'side' | 'back';
 
 export interface Point { x: number; y: number }
 
-export type TileKind = 'ground' | 'ford' | 'water' | 'boulder';
+/** fence and wall are impassable with no climbing; marsh costs extra Move to enter (slice spec §5-6). */
+export type TileKind = 'ground' | 'ford' | 'water' | 'boulder' | 'fence' | 'wall' | 'marsh';
 
 export interface Tile {
   kind: TileKind;
@@ -15,6 +16,8 @@ export interface Tile {
   height: number;
   /** Drawn as a bridge (map code B); plays as ordinary ground. */
   bridge?: boolean;
+  /** Display terrain id (Writer's ui.battle.terrain keys), when it differs from kind. */
+  terrain?: string;
 }
 
 export interface GridMap {
@@ -63,7 +66,7 @@ export interface AbilityDef {
   oncePerBattle?: boolean;
   morale?: number;
   buff?: { def?: number; res?: number; allFront?: boolean; until: Expiry };
-  debuff?: { move?: number; until: Expiry };
+  debuff?: { move?: number; noWaitBonus?: boolean; until: Expiry };
   /** Passive (Sure Footing). */
   jump?: number;
   freeClimb?: boolean;
@@ -76,13 +79,15 @@ export interface Modifier {
   atk?: number;
   hit?: number;
   allFront?: boolean;
+  /** Torch: the unit's next Wait gives no extra CT. */
+  noWaitBonus?: boolean;
   /** When it ends: at the start or end of a given unit's turn, or at battle end (vow surges). */
   endsOn: 'turnStart' | 'turnEnd' | 'battleEnd';
   endsWithUnit: string;
   source: string;
 }
 
-export type VowId = 'bulwark' | 'loneBlade';
+export type VowId = 'bulwark' | 'loneBlade' | 'mercy';
 export type VowStatus = 'intact' | 'fulfilled' | 'broken' | 'lapsed';
 
 export interface VowState {
@@ -124,6 +129,17 @@ export interface Unit {
   ai?: { holdUntilWithin?: number; prefersHeight?: number; healBelow?: number };
   /** Trait slot contents (job system §9.4). Passives here work like the class's own. */
   traits: string[];
+  /** Yield (slice spec §4): checked at turn start; yields at or below floor(max HP × this). */
+  yieldBelow?: number;
+  yielding: boolean;
+  /** Left the map alive (a yielding foe fled, or a civilian escaped). Status is 'lost' too. */
+  fled: boolean;
+  /** Villagers: on the squad's side, AI-driven, not needed for the win (slice spec §5). */
+  civilian: boolean;
+  /** Map edge a civilian escapes by. */
+  escapeEdge?: Facing;
+  /** Enemy AI target preferences (Raiders: civilians, then the back line). */
+  prefers?: ('civilian' | 'backLine')[];
 }
 
 export interface VictimPreview {
@@ -173,6 +189,8 @@ export type BattleEvent =
   | { type: 'vowFrozen'; unitId: string; vowId: VowId }
   | { type: 'intercept'; unitId: string; protectedId: string; attackerId: string }
   | { type: 'trait'; unitId: string; traitId: string; heal?: number }
+  | { type: 'yield'; unitId: string }
+  | { type: 'fled'; unitId: string; civilian: boolean }
   | { type: 'twistAnnounce'; twistId: string; firesAtTurn: number; tiles: Point[] }
   | { type: 'twist'; twistId: string; spawned: string[] }
   | { type: 'battleEnd'; winner: Team };

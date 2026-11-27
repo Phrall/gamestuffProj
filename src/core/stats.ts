@@ -1,4 +1,4 @@
-import { ABILITIES, RULES } from '../data';
+import { ABILITIES, RULES, VOWS } from '../data';
 import type { BattleState } from './battle';
 import type { Stats, Team, Unit } from './types';
 
@@ -37,6 +37,9 @@ export function effectiveStats(_state: BattleState, u: Unit): Stats & { allFront
       if (a.freeClimb) s.freeClimb = true;
     }
   }
+  // Mercy while sworn: +2 Res (slice spec §4).
+  const vow = _state.vows[u.id];
+  if (vow?.vowId === 'mercy' && (vow.status === 'intact' || vow.status === 'fulfilled')) s.res += VOWS.mercy.whileSworn.res;
   s.move += u.moraleMove;
   s.move = Math.max(0, s.move);
   return s;
