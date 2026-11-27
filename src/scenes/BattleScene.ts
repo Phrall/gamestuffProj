@@ -87,6 +87,8 @@ export const abilityLabel = (id: string): string => {
 const X = (v: number): number => v * LP;
 /** Top of the map safe area in lp: under the timeline chips and their name labels (QA S3; UX §8 said 50). */
 const SAFE_TOP = 48;
+/** Framing puts a box edge exactly on the safe edge; float error must not read that as out (QA on #59). */
+const EDGE_EPS = 1;
 const DARK = '#1f1e1b';
 const BONE = '#ede6d3';
 
@@ -1952,7 +1954,7 @@ export default class BattleScene extends Phaser.Scene {
     const ls = layoutScale();
     const { w: W, h: H } = screenLp();
     const tl = this.toScreen({ x: box.l, y: box.t }), br = this.toScreen({ x: box.r, y: box.b });
-    return tl.y / ls < X(SAFE_TOP) || br.y / ls > X(H - 117) || tl.x / ls < 0 || br.x / ls > X(W);
+    return tl.y / ls < X(SAFE_TOP) - EDGE_EPS || br.y / ls > X(H - 117) + EDGE_EPS || tl.x / ls < -EDGE_EPS || br.x / ls > X(W) + EDGE_EPS;
   }
 
   private lastLayoutScale = layoutScale();
@@ -2031,12 +2033,13 @@ export default class BattleScene extends Phaser.Scene {
     const out = pts.some((p) => {
       const c = this.toScreen(tileCenter(this.iso, p.x, p.y, this.drawH(p)));
       const top = (c.y - 60 * z) / ls, bottom = (c.y + 12 * z) / ls, l = (c.x - 20 * z) / ls, r = (c.x + 20 * z) / ls;
-      return top < X(SAFE_TOP) || bottom > X(H - 117) || l < 0 || r > X(W);
+      return top < X(SAFE_TOP) - EDGE_EPS || bottom > X(H - 117) + EDGE_EPS || l < -EDGE_EPS || r > X(W) + EDGE_EPS;
     });
     if (!out) return;
     const ws = pts.map((p) => tileCenter(this.iso, p.x, p.y, this.drawH(p)));
     const mid = { x: ws.reduce((a, w) => a + w.x, 0) / ws.length, y: ws.reduce((a, w) => a + w.y, 0) / ws.length - 20 };
-    const to = this.scrollToSafe(this.clampToMap(mid));
+    // QA on #59: the pan must not push other units back under the timeline, so it goes through frameUnits too.
+    const to = this.scrollToSafe(this.frameUnits(this.clampToMap(mid)));
     this.tweens.add({ targets: this.cameras.main, scrollX: to.x, scrollY: to.y, duration: 200, ease: 'Sine.easeInOut' });
   }
 
