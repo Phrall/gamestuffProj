@@ -24,9 +24,9 @@ export function vowOf(state: BattleState, unitId: string): VowState | undefined 
 
 const liveVow = (v: VowState | undefined): v is VowState => !!v && v.status === 'intact' && !v.frozen;
 
-/** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. */
+/** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. Villagers don't count (QA, Nov 27). */
 export function adjacentAllies(state: BattleState, u: Unit, p: Point): Unit[] {
-  return state.units.filter((o) => o.id !== u.id && o.team === u.team && o.status === 'ok' && manhattan(o.pos, p) === 1);
+  return state.units.filter((o) => o.id !== u.id && o.team === u.team && o.status === 'ok' && !o.civilian && manhattan(o.pos, p) === 1);
 }
 
 /** Lone Blade while sworn (intact or fulfilled): +1 Atk with no ally adjacent to where the unit stands. */
@@ -97,8 +97,8 @@ export function onDowned(state: BattleState, t: Unit, by: Unit | null): void {
     own.frozen = true;
     emit(state, { type: 'vowFrozen', unitId: t.id, vowId: own.vowId });
   }
-  // Bulwark breaks when an ally within the radius is downed.
-  for (const g of state.units) {
+  // Bulwark breaks when an ally within the radius is downed. A villager falling doesn't break it (QA, Nov 27).
+  for (const g of t.civilian ? [] : state.units) {
     const v = state.vows[g.id];
     if (g.id === t.id || g.team !== t.team || !liveVow(v) || v.vowId !== 'bulwark') continue;
     if (manhattan(g.pos, t.pos) <= VOWS.bulwark.breakRadius) breakVow(state, g, v, `${t.name} fell`);

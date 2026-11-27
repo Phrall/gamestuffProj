@@ -154,6 +154,28 @@ describe('villagers (§5)', () => {
     expect(s.winner).toBe('enemy');
   });
 
+  it('a villager falling breaks no Bulwark and is no ally for Lone Blade; Guard still covers villagers', () => {
+    const st = (o: object) => ({ stats: { hp: 99, atk: 1, mag: 1, def: 0, res: 0, spd: 1, move: 4, jump: 2, eva: 0, ...o } });
+    const villager = (x: number) => unit('v', 'player', 'sellsword', x, 0, 'S', { ...st({ hp: 1 }), abilities: [], civilian: true, escapeEdge: 'S' });
+    // Bulwark: villager 3 tiles from Maren (break radius, outside Guard reach) is downed.
+    const a = battle(flatRows(5, 1), [unit('m', 'player', 'sellsword', 0, 0, 'E', st({})), villager(3), unit('e', 'enemy', 'sellsword', 4, 0, 'W', st({ spd: 9, atk: 30, hitBonus: 200 }))]);
+    swearVow(a, 'm', 'bulwark');
+    startNextTurn(a);
+    useAbility(a, 'e', 'strike', { x: 3, y: 0 });
+    expect(getUnit(a, 'v').status).toBe('lost');
+    expect(a.vows.m!.status).toBe('intact');
+    // Lone Blade: a defeat with only a villager beside counts as alone.
+    const b = battle(flatRows(3, 1), [villager(0), unit('t', 'player', 'sellsword', 1, 0, 'E', st({ spd: 9, atk: 30, hitBonus: 200 })), unit('x', 'enemy', 'sellsword', 2, 0, 'W', st({ hp: 5 }))]);
+    swearVow(b, 't', 'loneBlade');
+    startNextTurn(b);
+    useAbility(b, 't', 'strike', { x: 2, y: 0 });
+    expect(b.vows.t!.status).toBe('fulfilled');
+    // Guard: Maren still takes an attack aimed at an adjacent villager.
+    const c = battle(flatRows(3, 1), [unit('m', 'player', 'sellsword', 0, 0, 'E', st({})), villager(1), unit('e', 'enemy', 'sellsword', 2, 0, 'W', st({}))]);
+    swearVow(c, 'm', 'bulwark');
+    expect(previewAction(c, getUnit(c, 'e'), 'strike', { x: 1, y: 0 }).interceptedBy).toBe('m');
+  });
+
   it('Torch: the target\'s next Wait gives only the one-action CT', () => {
     const s = battle(flatRows(3, 1), [
       unit('r', 'enemy', 'sellsword', 0, 0, 'E', { ...sturdy({ spd: 9 }), abilities: ['torch'] }),
