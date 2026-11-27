@@ -58,6 +58,14 @@ export function planTurn(state: BattleState, unit: Unit): AiPlan {
     }
   }
 
+  // Challenge: a taunted unit must attack the challenger this turn if it can reach.
+  const tauntBy = unit.modifiers.find((m) => m.tauntBy)?.tauntBy;
+  const challenger = tauntBy ? state.units.find((u) => u.id === tauntBy && u.status === 'ok') : undefined;
+  if (challenger) {
+    const forced = bestAttack(state, unit, tiles.map((t) => t.pos), (p, s) => (p.victims.some((v) => v.unitId === challenger.id) ? Math.max(s, 1e-6) : 0));
+    if (forced) return { ...forced, reason: `challenged: ${forced.reason}` };
+  }
+
   // Rule 2: best expected damage over (tile, ability, target).
   const best = bestAttack(state, unit, tiles.map((t) => t.pos), (_p, s) => s, (p) => unit.ai?.prefersHeight !== undefined && heightAt(state.map, p) >= unit.ai.prefersHeight);
   if (best) return best;

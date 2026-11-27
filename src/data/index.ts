@@ -62,9 +62,11 @@ export const ABILITIES: Record<string, AbilityDef> = Object.fromEntries(
 
 export interface ClassData { id: string; name: string; stats: Stats; abilities: string[] }
 
-export const CLASSES: Record<string, ClassData> = Object.fromEntries(
-  Object.entries(raw.classes).map(([id, c]) => [id, { id, name: c.name, stats: { ...(c.stats as RawStats) }, abilities: c.abilities }]),
-);
+export const CLASSES: Record<string, ClassData> = Object.fromEntries([
+  ...Object.entries(raw.classes).map(([id, c]) => [id, { id, name: c.name, stats: { ...(c.stats as RawStats) }, abilities: c.abilities }]),
+  // Slice oath classes: stats derive from the class and level like every unit (§19).
+  ...Object.entries(slice.classes).map(([id, c]) => [id, { id, name: c.name, stats: deriveStats(id, c.level), abilities: c.abilities }]),
+]);
 
 export interface LegendEntry { kind: Tile['kind']; height: number; terrain?: string }
 

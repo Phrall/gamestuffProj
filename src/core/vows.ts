@@ -22,6 +22,9 @@ export function vowOf(state: BattleState, unitId: string): VowState | undefined 
   return state.vows[unitId];
 }
 
+/** Hold the Line: extra Guard reach from active modifiers. */
+const guardReachBonus = (g: Unit) => g.modifiers.reduce((n, m) => n + (m.guardReach ?? 0), 0);
+
 const liveVow = (v: VowState | undefined): v is VowState => !!v && v.status === 'intact' && !v.frozen;
 
 /** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. Villagers don't count (QA, Nov 27). */
@@ -46,7 +49,7 @@ export function guardianFor(state: BattleState, attacker: Unit, target: Unit): U
     .filter((g) => {
       const v = state.vows[g.id];
       return g.id !== target.id && g.team === target.team && g.status === 'ok' && v?.vowId === 'bulwark' &&
-        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) <= VOWS.bulwark.guardRadius;
+        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) <= VOWS.bulwark.guardRadius + guardReachBonus(g);
     })
     .sort((a, b) => a.order - b.order)[0];
 }

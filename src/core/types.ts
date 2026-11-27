@@ -43,7 +43,8 @@ export interface Stats {
   hitBonus?: number;
 }
 
-export type AbilityType = 'phys' | 'magic' | 'heal' | 'buff' | 'self' | 'passive';
+/** debuff: an enemy-targeted status that always lands (Challenge). */
+export type AbilityType = 'phys' | 'magic' | 'heal' | 'buff' | 'self' | 'passive' | 'debuff';
 export type AreaShape = 'plus' | 'perpendicularLine3';
 export type Expiry = 'ownNextTurn' | 'casterNextTurnStart' | 'targetNextTurnEnd';
 
@@ -65,8 +66,17 @@ export interface AbilityDef {
   revives?: boolean;
   oncePerBattle?: boolean;
   morale?: number;
-  buff?: { def?: number; res?: number; allFront?: boolean; until: Expiry };
-  debuff?: { move?: number; noWaitBonus?: boolean; until: Expiry };
+  buff?: { def?: number; res?: number; allFront?: boolean; guardReach?: number; until: Expiry };
+  /** taunt: the target must attack the caster on its next turn if it can (Challenge). */
+  debuff?: { move?: number; noWaitBonus?: boolean; taunt?: boolean; until: Expiry };
+  /** Lunge: step 1 tile toward the target (must be free), then strike from there. */
+  lunge?: boolean;
+  /** Measured Cut: extra hit with no ally adjacent to the attacker. */
+  hitBonusAlone?: number;
+  /** Feint: on a hit, the target turns to face away from the attacker. */
+  turnsTarget?: boolean;
+  /** Ember: damage at the start of the target's next turns. */
+  dot?: { damage: number; turns: number };
   /** Passive (Sure Footing). */
   jump?: number;
   freeClimb?: boolean;
@@ -81,6 +91,12 @@ export interface Modifier {
   allFront?: boolean;
   /** Torch: the unit's next Wait gives no extra CT. */
   noWaitBonus?: boolean;
+  /** Hold the Line: Guard reach bonus. */
+  guardReach?: number;
+  /** Challenge: must attack this unit if it can. */
+  tauntBy?: string;
+  /** Ember: damage per tick, ticks left, and who cast it. */
+  dot?: { damage: number; left: number; by: string };
   /** When it ends: at the start or end of a given unit's turn, or at battle end (vow surges). */
   endsOn: 'turnStart' | 'turnEnd' | 'battleEnd';
   endsWithUnit: string;
@@ -190,6 +206,7 @@ export type BattleEvent =
   | { type: 'intercept'; unitId: string; protectedId: string; attackerId: string }
   | { type: 'trait'; unitId: string; traitId: string; heal?: number }
   | { type: 'yield'; unitId: string }
+  | { type: 'dot'; unitId: string; damage: number; hpAfter: number }
   | { type: 'fled'; unitId: string; civilian: boolean }
   | { type: 'twistAnnounce'; twistId: string; firesAtTurn: number; tiles: Point[] }
   | { type: 'twist'; twistId: string; spawned: string[] }
