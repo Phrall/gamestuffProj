@@ -13,6 +13,12 @@ export function teamMorale(state: BattleState, team: Team): MoraleTier {
   return moraleTier(state.morale[team]);
 }
 
+/** The unit has this passive, from its class kit or its trait slot (job system §9.4). */
+export const hasPassive = (u: Unit, id: string): boolean => u.abilities.includes(id) || u.traits.includes(id);
+
+/** Hard to Kill is unspent this battle. */
+export const hardToKillReady = (u: Unit): boolean => hasPassive(u, 'hardToKill') && !u.usedOnce.includes('trait:hardToKill');
+
 /** Base stats plus active modifiers, passives and morale (§7). */
 export function effectiveStats(_state: BattleState, u: Unit): Stats & { allFront: boolean; freeClimb: boolean; hit: number } {
   const s = { ...u.base, allFront: false, freeClimb: false, hit: 0 };
@@ -24,7 +30,7 @@ export function effectiveStats(_state: BattleState, u: Unit): Stats & { allFront
     s.move += m.move ?? 0;
     if (m.allFront) s.allFront = true;
   }
-  for (const id of u.abilities) {
+  for (const id of new Set([...u.abilities, ...u.traits])) {
     const a = ABILITIES[id];
     if (a?.type === 'passive') {
       s.jump += a.jump ?? 0;

@@ -2,7 +2,7 @@ import { ABILITIES, RULES } from '../data';
 import type { BattleState } from './battle';
 import { DIRS, facingToward, heightAt, inBounds, isPassable, manhattan, tileAt } from './grid';
 import { occupant } from './pathfinding';
-import { effectiveStats, teamMorale } from './stats';
+import { effectiveStats, hardToKillReady, teamMorale } from './stats';
 import { guardianFor, loneBladeAtk, wouldBreakOwnVow } from './vows';
 import type { AbilityDef, ActionPreview, Point, Side, Unit, VictimPreview } from './types';
 
@@ -193,6 +193,9 @@ export function previewVictim(state: BattleState, actor: Unit, a: AbilityDef, fr
     damage += s.bonus;
     pushedTo = s.to;
   }
+  // Hard to Kill: once per battle, a hit that would down the unit leaves it at 1 HP.
+  const survives = damage >= u.hp && u.status === 'ok' && hardToKillReady(u) ? 'hardToKill' : undefined;
+  if (survives) damage = u.hp - 1;
   const hpAfter = Math.max(0, u.hp - damage);
-  return { ...base, hit: hitChance(state, actor, a, from, u, side), damage, hpAfter, downs: hpAfter === 0, pushedTo };
+  return { ...base, hit: hitChance(state, actor, a, from, u, side), damage, hpAfter, downs: hpAfter === 0, pushedTo, ...(survives ? { survives } : {}) };
 }

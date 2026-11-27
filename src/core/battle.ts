@@ -1,11 +1,11 @@
-import { ABILITIES, RULES, type BattleSetup } from '../data';
+import { ABILITIES, RULES, type BattleSetup, type UnitSetup } from '../data';
 import { abilityReady, inRange, previewAction } from './combat';
-import { facingToward, key, samePoint } from './grid';
+import { facingToward, key, manhattan, samePoint, tileAt } from './grid';
 import { occupant, pathTo, pathTree } from './pathfinding';
 import { nextRandom } from './rng';
-import { teamMorale } from './stats';
+import { hasPassive, teamMorale } from './stats';
 import { advance } from './timeline';
-import type { BattleEvent, Facing, GridMap, Point, Team, Unit, VictimResult, VowState } from './types';
+import type { BattleEvent, Facing, GridMap, Point, Team, TwistState, Unit, VictimResult, VowState } from './types';
 import { onDowned, onIntercept, resolveVowsAtEnd } from './vows';
 
 export interface BattleState {
@@ -23,10 +23,12 @@ export interface BattleState {
   events: BattleEvent[];
   /** Sworn vows by unit id (§9). */
   vows: Record<string, VowState>;
+  /** Scripted twists for this battle (slice spec §10), in data order. */
+  twists: (TwistState & { units: UnitSetup[] })[];
 }
 
-export function createBattle(setup: BattleSetup, seed = 1): BattleState {
-  const units: Unit[] = setup.units.map((s, i) => ({
+function makeUnit(s: UnitSetup, order: number): Unit {
+  return {
     id: s.id,
     name: s.name,
     team: s.team,
@@ -46,12 +48,16 @@ export function createBattle(setup: BattleSetup, seed = 1): BattleState {
     moraleMove: 0,
     xp: 0,
     defeats: 0,
-    order: i,
+    order,
     ai: s.ai,
-  }));
+    traits: [...(s.traits ?? [])],
+  };
+}
+
+export function createBattle(setup: BattleSetup, seed = 1): BattleState {
   return {
     map: setup.map,
-    units,
+    units: setup.units.map(makeUnit),
     morale: { player: RULES.morale.start, enemy: RULES.morale.start },
     activeId: null,
     moved: false,
@@ -62,6 +68,7 @@ export function createBattle(setup: BattleSetup, seed = 1): BattleState {
     seed,
     events: [],
     vows: {},
+    twists: (setup.twists ?? []).map(({ units, ...def }) => ({ def, units, announced: false, fired: false })),
   };
 }
 
@@ -96,7 +103,9 @@ function expireModifiers(state: BattleState, unitId: string, when: 'turnStart' |
 function checkWinner(state: BattleState): void {
   if (state.winner) return;
   for (const team of ['enemy', 'player'] as Team[]) {
-    if (state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok')) {
+    // Units a spawn twist has yet to bring in count toward the win condition (slice spec §10).
+    const pending = state.twists.some((t) => !t.fired && t.def.effect === 'spawn' && t.units.some((s) => s.team === team));
+    if (!pending && state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok')) {
       state.winner = enemyOf(team);
       state.activeId = null;
       resolveVowsAtEnd(state);
@@ -132,10 +141,12 @@ export function startNextTurn(state: BattleState): Unit | null {
     state.moved = false;
     state.acted = false;
     state.turnNumber += 1;
+    runTwists(state);
     for (const id of Object.keys(u.cooldowns)) u.cooldowns[id] = Math.max(0, (u.cooldowns[id] ?? 0) - 1);
     expireModifiers(state, u.id, 'turnStart');
     u.moraleMove = teamMorale(state, u.team).move;
     emit(state, { type: 'turnStart', unitId: u.id });
+    turnStartTraits(state, u);
     return u;
   }
 }
@@ -184,6 +195,10 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
       if (v.damage > 0) {
         t.hp = Math.max(0, t.hp - v.damage);
         r.damage = v.damage;
+        if (v.survives) {
+          t.usedOnce.push(`trait:${v.survives}`);
+          emit(state, { type: 'trait', unitId: t.id, traitId: v.survives });
+        }
         if (v.pushedTo) t.pos = { ...v.pushedTo };
         r.pushedTo = v.pushedTo;
       }
@@ -262,4 +277,63 @@ export function endTurn(state: BattleState, facing?: Facing): void {
   emit(state, { type: 'turnEnd', unitId: u.id, facing: u.facing, ct: u.ct });
   state.activeId = null;
   checkWinner(state);
+}
+
+// ---------- twists (slice spec §10) ----------
+
+/** Where a spawn lands: its own tile, or the nearest free, walkable map-edge tile. */
+function spawnTile(state: BattleState, want: Point, taken: Point[]): Point {
+  const free = (p: Point) => {
+    const t = tileAt(state.map, p);
+    return !!t && (t.kind === 'ground' || t.kind === 'ford') && !occupant(state, p) && !taken.some((q) => samePoint(p, q));
+  };
+  if (free(want)) return want;
+  const { width: w, height: h } = state.map;
+  const edge: Point[] = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge.push({ x, y });
+  const best = edge.filter(free).sort((a, b) => manhattan(a, want) - manhattan(b, want) || a.y - b.y || a.x - b.x)[0];
+  if (!best) throw new Error(`no free edge tile for a spawn near ${want.x},${want.y}`);
+  return best;
+}
+
+/** Tiles a spawn twist will use if it fired now (for the announce marks). */
+export function twistTiles(state: BattleState, t: BattleState['twists'][number]): Point[] {
+  const taken: Point[] = [];
+  for (const s of t.units) taken.push(spawnTile(state, s.pos, taken));
+  return taken;
+}
+
+/** Runs at the start of every turn, after the turn number advances. */
+function runTwists(state: BattleState): void {
+  for (const t of state.twists) {
+    const n = state.turnNumber;
+    if (!t.announced && n >= t.def.firesAtTurn - t.def.announceTurnsAhead && n < t.def.firesAtTurn) {
+      t.announced = true;
+      emit(state, { type: 'twistAnnounce', twistId: t.def.id, firesAtTurn: t.def.firesAtTurn, tiles: twistTiles(state, t) });
+    }
+    if (t.fired || n < t.def.firesAtTurn) continue;
+    t.fired = true;
+    t.announced = true;
+    const tiles = twistTiles(state, t);
+    const spawned = t.units.map((s, i) => {
+      const u = makeUnit({ ...s, pos: tiles[i]! }, state.units.length);
+      state.units.push(u);
+      return u.id;
+    });
+    emit(state, { type: 'twist', twistId: t.def.id, spawned });
+  }
+}
+
+// ---------- traits (job system §9.4) ----------
+
+function turnStartTraits(state: BattleState, u: Unit): void {
+  // Hedge Lore: heal 2 at turn start if no foe is adjacent.
+  if (hasPassive(u, 'hedgeLore') && u.hp < u.base.hp) {
+    const foeAdjacent = state.units.some((e) => e.team !== u.team && e.status === 'ok' && manhattan(e.pos, u.pos) === 1);
+    if (!foeAdjacent) {
+      const heal = Math.min(2, u.base.hp - u.hp);
+      u.hp += heal;
+      emit(state, { type: 'trait', unitId: u.id, traitId: 'hedgeLore', heal });
+    }
+  }
 }
