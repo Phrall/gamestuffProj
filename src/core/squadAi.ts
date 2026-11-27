@@ -22,6 +22,7 @@ export function newSquadMemory(state: BattleState): SquadMemory {
 }
 
 const HILL: Point = { x: 2, y: 7 };
+export const TUNE = { braceReach: 4, mendGuardianBelow: 0.9, callaKeepAway: 4 };
 const ok = (state: BattleState, team: string) => state.units.filter((u) => u.team === team && u.status === 'ok');
 const isMelee = (u: Unit) => u.classId === 'sellsword';
 
@@ -61,11 +62,17 @@ export function planSquadTurn(state: BattleState, unit: Unit, mem: SquadMemory):
   if (unit.classId === 'hedgeMage') {
     const support = callaSupport(state, unit, tiles);
     if (support) return support;
+    // Rule 2c (Nov 27): Calla attacks only from tiles at least TUNE.callaKeepAway from every foe, if any exist.
+    const safe = tiles.filter((p) => nearestEnemyDist(state, p) >= TUNE.callaKeepAway);
+    if (safe.length) tiles = safe;
   }
 
   // Rule 4: Sellsword braces under melee pressure when it can't down anyone.
-  if (isMelee(unit) && abilityReady(unit, 'brace') && unit.hp < unit.base.hp * 0.6) {
-    const meleeAdjacent = ok(state, 'enemy').some((e) => manhattan(e.pos, unit.pos) === 1 && e.abilities.some((a) => a === 'strike' || a === 'thrust' || a === 'cleave'));
+  // Rule 4b (Nov 27): a Bulwark guardian braces at any HP when a melee foe is within TUNE.braceReach tiles.
+  const guarding = vow?.vowId === 'bulwark' && vow.status === 'intact';
+  if (isMelee(unit) && abilityReady(unit, 'brace') && (guarding || unit.hp < unit.base.hp * 0.6)) {
+    const reach = guarding ? TUNE.braceReach : 1;
+    const meleeAdjacent = ok(state, 'enemy').some((e) => manhattan(e.pos, unit.pos) <= reach && e.abilities.some((a) => a === 'strike' || a === 'thrust' || a === 'cleave'));
     const canDown = bestAttack(state, unit, tiles, (p, s) => (p.victims.some((v) => v.downs) ? s : 0));
     if (meleeAdjacent && !canDown) {
       return { unitId: unit.id, moveTo: unit.pos, action: { abilityId: 'brace', target: unit.pos }, facing: stayFacing(), score: 1, reason: 'brace' };
@@ -115,12 +122,14 @@ function callaSupport(state: BattleState, unit: Unit, tiles: Point[]): AiPlan | 
   const act = (abilityId: string, who: Unit, from: Point, reason: string): AiPlan =>
     ({ unitId: unit.id, moveTo: from, action: { abilityId, target: who.pos }, facing: facingToward(from, who.pos, unit.facing), score: 1, reason });
 
-  const downed = allies.filter((a) => a.status === 'downed').sort((a, b) => a.reviveCounter - b.reviveCounter || a.order - b.order);
+  // Rule 2b (Nov 27): the Bulwark guardian comes first for revives and Mends.
+  const guardian = (a: Unit) => (vowOf(state, a.id)?.vowId === 'bulwark' ? 0 : 1);
+  const downed = allies.filter((a) => a.status === 'downed').sort((a, b) => guardian(a) - guardian(b) || a.reviveCounter - b.reviveCounter || a.order - b.order);
   for (const d of downed) {
     const from = canTarget('mend', d);
     if (from) return act('mend', d, from, `revive ${d.id}`);
   }
-  const hurt = allies.filter((a) => a.status === 'ok' && a.hp < a.base.hp * 0.5).sort((a, b) => a.hp - b.hp || a.order - b.order);
+  const hurt = allies.filter((a) => a.status === 'ok' && a.hp < a.base.hp * (guardian(a) === 0 ? TUNE.mendGuardianBelow : 0.5)).sort((a, b) => guardian(a) - guardian(b) || a.hp - b.hp || a.order - b.order);
   for (const h of hurt) {
     const from = canTarget('mend', h);
     if (from) return act('mend', h, from, `mend ${h.id}`);

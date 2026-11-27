@@ -1,5 +1,5 @@
 {
-  "version": "1.9",
+  "version": "1.10",
   "rules": {
     "ctThreshold": 100,
     "ctAfterTurn": {
@@ -641,22 +641,22 @@
       "facing": "S",
       "prefersHeight": 2,
       "stats": {
-        "hp": 20,
-        "atk": 5,
+        "hp": 24,
+        "atk": 6,
         "mag": 1,
         "def": 2,
         "res": 3,
         "spd": 7,
         "move": 4,
         "jump": 2,
-        "eva": 15
+        "eva": 17
       },
       "abilities": [
         "shoot"
       ],
       "statClass": "courtArcher",
-      "level": 3,
-      "hitBonus": 5
+      "level": 5,
+      "hitBonus": 6
     },
     {
       "id": "binder",
