@@ -61,17 +61,22 @@ describe('slice abilities', () => {
     expect(getUnit(s, 'c').defeats).toBe(1);
   });
 
-  it('an Ember tick on a yielding foe breaks the caster\'s Mercy', () => {
+  it('Ember ends when its target starts Yielding, so it never breaks Mercy on its own', () => {
     const s = battle(flatRows(4, 1), [unit('c', 'player', 'hedgeMage', 0, 0, 'E', { stats: { ...deriveStats('hedgeMage', 3), ...fast }, abilities: ['ember'] }), unit('e', 'enemy', 'sellsword', 2, 0, 'W', { ...dummy({ spd: 6 }), yieldBelow: 0.25 })]);
     swearVow(s, 'c', 'mercy');
     startNextTurn(s);
     useAbility(s, 'c', 'ember', { x: 2, y: 0 });
     endTurn(s);
-    expect(s.vows.c!.status).toBe('intact'); // not yielding when hit
-    getUnit(s, 'e').yielding = true;
+    const e = getUnit(s, 'e');
+    e.hp = 12; // the next tick (2) leaves 10 = floor(40 x 0.25): it yields after the tick
     let u = startNextTurn(s)!;
     while (u.id !== 'e') { endTurn(s); u = startNextTurn(s)!; }
-    expect(s.vows.c!.status).toBe('broken');
+    expect(e.yielding).toBe(true);
+    expect(e.modifiers.some((m) => m.dot)).toBe(false);
+    endTurn(s);
+    for (let i = 0; i < 6; i++) { const n = startNextTurn(s); if (!n) break; endTurn(s); }
+    expect(s.events.filter((x) => x.type === 'dot').length).toBe(1);
+    expect(s.vows.c!.status).not.toBe('broken');
   });
 
   it('Shield Bash: Shove-style push with +3 if blocked, and the target loses its Wait bonus', () => {

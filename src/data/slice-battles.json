@@ -1,328 +1,36 @@
 {
   "version": "0.1",
-  "_notes": "Slice data: battles 2-3 (vertical-slice-spec \u00a74-6, \u00a710) and the slice class kits (\u00a72-3, \u00a79). Programming transcribed this from the spec for Game Design to own and tune. Each map has its own legend: digits are ground height; other codes map to a tile kind, height and terrain id (the terrain id matches the Writer's ui.battle.terrain keys). 'overrides' sets a terrain id on single tiles. Squad start tiles are Programming's guesses inside the spec's deploy area.",
+  "_notes": "Slice data: battles 2-3 (vertical-slice-spec §4-6, §10) and the slice class kits (§2-3, §9). Programming transcribed this from the spec for Game Design to own and tune. Each map has its own legend: digits are ground height; other codes map to a tile kind, height and terrain id (the terrain id matches the Writer's ui.battle.terrain keys). 'overrides' sets a terrain id on single tiles. Squad start tiles are Programming's guesses inside the spec's deploy area.",
   "statClasses": {
-    "raider": {
-      "base": {
-        "str": 4,
-        "vit": 3,
-        "dex": 6,
-        "agi": 10,
-        "int": 1,
-        "wil": 2
-      },
-      "growthPerLevel": {
-        "str": 0.5,
-        "vit": 0.5,
-        "dex": 0.5,
-        "agi": 0.5,
-        "int": 0,
-        "wil": 0.25
-      },
-      "move": 5,
-      "jump": 2,
-      "weapon": "hatchet",
-      "armor": "rags"
-    },
-    "raiderSlinger": {
-      "base": {
-        "str": 3,
-        "vit": 3,
-        "dex": 8,
-        "agi": 8,
-        "int": 1,
-        "wil": 2
-      },
-      "growthPerLevel": {
-        "str": 0.5,
-        "vit": 0.5,
-        "dex": 0.75,
-        "agi": 0.5,
-        "int": 0,
-        "wil": 0.25
-      },
-      "move": 4,
-      "jump": 2,
-      "weapon": "sling",
-      "armor": "rags"
-    },
-    "raiderChief": {
-      "base": {
-        "str": 6,
-        "vit": 7,
-        "dex": 7,
-        "agi": 8,
-        "int": 1,
-        "wil": 3
-      },
-      "growthPerLevel": {
-        "str": 0.5,
-        "vit": 1,
-        "dex": 0.5,
-        "agi": 0.5,
-        "int": 0,
-        "wil": 0.25
-      },
-      "move": 4,
-      "jump": 2,
-      "weapon": "blade",
-      "armor": "leather"
-    },
-    "villager": {
-      "base": {
-        "str": 1,
-        "vit": 0,
-        "dex": 2,
-        "agi": 4,
-        "int": 1,
-        "wil": 2
-      },
-      "growthPerLevel": {
-        "str": 0,
-        "vit": 0,
-        "dex": 0,
-        "agi": 0,
-        "int": 0,
-        "wil": 0
-      },
-      "move": 3,
-      "jump": 1,
-      "weapon": "none",
-      "armor": "rags"
-    },
-    "warden": {
-      "base": {
-        "str": 5,
-        "vit": 10,
-        "dex": 6,
-        "agi": 6,
-        "int": 2,
-        "wil": 5
-      },
-      "growthPerLevel": {
-        "str": 0.5,
-        "vit": 1.25,
-        "dex": 0.25,
-        "agi": 0.25,
-        "int": 0,
-        "wil": 0.5
-      },
-      "move": 3,
-      "jump": 2,
-      "weapon": "sword",
-      "armor": "plate"
-    },
-    "duelist": {
-      "base": {
-        "str": 6,
-        "vit": 7,
-        "dex": 9,
-        "agi": 9,
-        "int": 2,
-        "wil": 3
-      },
-      "growthPerLevel": {
-        "str": 0.75,
-        "vit": 0.75,
-        "dex": 0.75,
-        "agi": 0.75,
-        "int": 0,
-        "wil": 0.25
-      },
-      "move": 4,
-      "jump": 3,
-      "weapon": "blade",
-      "armor": "duelCoat"
-    },
-    "pilgrim": {
-      "base": {
-        "str": 2,
-        "vit": 6,
-        "dex": 2,
-        "agi": 6,
-        "int": 7,
-        "wil": 8
-      },
-      "growthPerLevel": {
-        "str": 0,
-        "vit": 0.75,
-        "dex": 0.25,
-        "agi": 0.5,
-        "int": 0.75,
-        "wil": 1
-      },
-      "move": 3,
-      "jump": 1,
-      "weapon": "holyStaff",
-      "armor": "vestments"
-    }
+    "raider": { "base": { "str": 4, "vit": 3, "dex": 6, "agi": 10, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0.5, "vit": 0.5, "dex": 0.5, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 5, "jump": 2, "weapon": "hatchet", "armor": "rags" },
+    "raiderSlinger": { "base": { "str": 3, "vit": 3, "dex": 8, "agi": 8, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0.5, "vit": 0.5, "dex": 0.75, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 4, "jump": 2, "weapon": "sling", "armor": "rags" },
+    "raiderChief": { "base": { "str": 6, "vit": 7, "dex": 7, "agi": 8, "int": 1, "wil": 3 }, "growthPerLevel": { "str": 0.5, "vit": 1, "dex": 0.5, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 4, "jump": 2, "weapon": "blade", "armor": "leather" },
+    "villager": { "base": { "str": 1, "vit": 3, "dex": 2, "agi": 4, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0, "vit": 0, "dex": 0, "agi": 0, "int": 0, "wil": 0 }, "move": 3, "jump": 1, "weapon": "none", "armor": "rags" },
+    "warden": { "base": { "str": 5, "vit": 10, "dex": 6, "agi": 6, "int": 2, "wil": 5 }, "growthPerLevel": { "str": 0.5, "vit": 1.25, "dex": 0.25, "agi": 0.25, "int": 0, "wil": 0.5 }, "move": 3, "jump": 2, "weapon": "sword", "armor": "plate" },
+    "duelist": { "base": { "str": 6, "vit": 7, "dex": 9, "agi": 9, "int": 2, "wil": 3 }, "growthPerLevel": { "str": 0.75, "vit": 0.75, "dex": 0.75, "agi": 0.75, "int": 0, "wil": 0.25 }, "move": 4, "jump": 3, "weapon": "blade", "armor": "duelCoat" },
+    "pilgrim": { "base": { "str": 2, "vit": 6, "dex": 2, "agi": 6, "int": 7, "wil": 8 }, "growthPerLevel": { "str": 0, "vit": 0.75, "dex": 0.25, "agi": 0.5, "int": 0.75, "wil": 1 }, "move": 3, "jump": 1, "weapon": "holyStaff", "armor": "vestments" }
   },
-  "weapons": {
-    "hatchet": {
-      "atk": 2
-    },
-    "sling": {
-      "atk": 1
-    },
-    "holyStaff": {
-      "mag": 1
-    },
-    "none": {}
-  },
-  "armor": {
-    "rags": {
-      "def": 0,
-      "res": 0,
-      "weight": 0
-    },
-    "duelCoat": {
-      "def": 1,
-      "res": 1,
-      "weight": 0
-    }
-  },
+  "weapons": { "hatchet": { "atk": 2 }, "sling": { "atk": 1 }, "holyStaff": { "mag": 1 }, "none": {} },
+  "armor": { "rags": { "def": 0, "res": 0, "weight": 0 }, "duelCoat": { "def": 1, "res": 1, "weight": 0 } },
   "abilities": {
-    "hack": {
-      "type": "phys",
-      "power": 4,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 0,
-      "melee": true
-    },
-    "torch": {
-      "type": "phys",
-      "power": 2,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 3,
-      "melee": true,
-      "debuff": {
-        "noWaitBonus": true,
-        "until": "targetNextTurnEnd"
-      }
-    },
-    "sling": {
-      "type": "phys",
-      "power": 4,
-      "range": [
-        2,
-        4
-      ],
-      "cd": 0
-    },
-    "hamstring": {
-      "type": "phys",
-      "power": 3,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 3,
-      "melee": true,
-      "debuff": {
-        "move": -2,
-        "until": "targetNextTurnEnd"
-      }
-    },
-    "pointBlank": {
-      "type": "phys",
-      "power": 3,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 2
-    },
-    "ember": {
-      "type": "magic",
-      "power": 2,
-      "range": [
-        1,
-        3
-      ],
-      "cd": 3,
-      "dot": {
-        "damage": 2,
-        "turns": 2
-      }
-    },
-    "shieldBash": {
-      "type": "phys",
-      "power": 3,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 2,
-      "melee": true,
-      "push": 1,
-      "blockedBonus": 3,
-      "debuff": {
-        "noWaitBonus": true,
-        "until": "targetNextTurnEnd"
-      }
-    },
-    "holdTheLine": {
-      "type": "self",
-      "cd": 3,
-      "buff": {
-        "def": 2,
-        "guardReach": 1,
-        "until": "ownNextTurn"
-      }
-    },
-    "challenge": {
-      "type": "debuff",
-      "range": [
-        1,
-        3
-      ],
-      "cd": 3,
-      "debuff": {
-        "taunt": true,
-        "until": "targetNextTurnEnd"
-      }
-    },
-    "lunge": {
-      "type": "phys",
-      "power": 4,
-      "range": [
-        2,
-        2
-      ],
-      "cd": 2,
-      "melee": true,
-      "straightLine": true,
-      "lunge": true
-    },
-    "measuredCut": {
-      "type": "phys",
-      "power": 7,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 3,
-      "melee": true,
-      "hitBonusAlone": 10
-    },
-    "feint": {
-      "type": "phys",
-      "power": 1,
-      "range": [
-        1,
-        1
-      ],
-      "cd": 3,
-      "melee": true,
-      "turnsTarget": true
-    }
+    "hack": { "type": "phys", "power": 4, "range": [1, 1], "cd": 0, "melee": true },
+    "torch": { "type": "phys", "power": 2, "range": [1, 1], "cd": 3, "melee": true, "debuff": { "noWaitBonus": true, "until": "targetNextTurnEnd" } },
+    "sling": { "type": "phys", "power": 4, "range": [2, 4], "cd": 0 },
+    "hamstring": { "type": "phys", "power": 3, "range": [1, 1], "cd": 3, "melee": true, "debuff": { "move": -2, "until": "targetNextTurnEnd" } },
+    "pointBlank": { "type": "phys", "power": 3, "range": [1, 1], "cd": 2 },
+    "ember": { "type": "magic", "power": 2, "range": [1, 3], "cd": 3, "dot": { "damage": 2, "turns": 2 } },
+    "shieldBash": { "type": "phys", "power": 3, "range": [1, 1], "cd": 2, "melee": true, "push": 1, "blockedBonus": 3, "debuff": { "noWaitBonus": true, "until": "targetNextTurnEnd" } },
+    "holdTheLine": { "type": "self", "cd": 3, "buff": { "def": 2, "guardReach": 1, "until": "ownNextTurn" } },
+    "challenge": { "type": "debuff", "range": [1, 3], "cd": 3, "debuff": { "taunt": true, "until": "targetNextTurnEnd" } },
+    "lunge": { "type": "phys", "power": 4, "range": [2, 2], "cd": 2, "melee": true, "straightLine": true, "lunge": true },
+    "measuredCut": { "type": "phys", "power": 7, "range": [1, 1], "cd": 3, "melee": true, "hitBonusAlone": 10 },
+    "feint": { "type": "phys", "power": 1, "range": [1, 1], "cd": 3, "melee": true, "turnsTarget": true }
   },
+  "classes": {
+    "warden": { "name": "Warden", "abilities": ["strike", "shieldBash", "holdTheLine"], "level": 3 },
+    "duelist": { "name": "Duelist", "abilities": ["strike", "lunge", "measuredCut"], "level": 3 }
+  },
+  "_notesAbilities": "Ranks 1-2 abilities reachable in the slice. Pilgrim kit and rank 3 oath abilities (Second Wind, Steadfast, Step Aside, Riposte, Blessing, Vigil, Sanctuary, Light, Absolve) are not in the engine yet: Pilgrim is camp-preview only in the slice and oath classes reach at most rank 2.",
   "vows": {
     "mercy": {
       "name": "Mercy",
@@ -332,56 +40,23 @@
       "goal": 1,
       "progress": "spareYieldingFoe",
       "breakOn": "damageYieldingFoe",
-      "whileSworn": {
-        "res": 2
-      },
-      "kept": {
-        "resolve": 2,
-        "nextBattle": {
-          "res": 2
-        }
-      },
-      "broken": {
-        "shadow": 2,
-        "surge": {
-          "atk": 3,
-          "ignoresYield": true
-        }
-      },
+      "whileSworn": { "res": 2 },
+      "kept": { "resolve": 2, "nextBattle": { "res": 2 } },
+      "broken": { "shadow": 2, "surge": { "atk": 3, "ignoresYield": true } },
       "resolvesAt": "battleEnd"
     }
   },
-  "yield": {
-    "moraleOnFlee": -3
-  },
-  "movement": {
-    "marshCost": 2
-  },
+  "yield": { "moraleOnFlee": -3 },
+  "movement": { "marshCost": 2 },
   "battles": {
     "ashfordGreen": {
       "name": "Ashford Green",
       "squadLevel": 3,
       "legend": {
-        "F": {
-          "kind": "fence",
-          "height": 0,
-          "terrain": "fence"
-        },
-        "X": {
-          "kind": "wall",
-          "height": 0,
-          "terrain": "cottageWall"
-        },
-        "W": {
-          "kind": "ground",
-          "height": 2,
-          "terrain": "wellRim"
-        },
-        "V": {
-          "kind": "ground",
-          "height": 0,
-          "terrain": "ground"
-        }
+        "F": { "kind": "fence", "height": 0, "terrain": "fence" },
+        "X": { "kind": "wall", "height": 0, "terrain": "cottageWall" },
+        "W": { "kind": "ground", "height": 2, "terrain": "wellRim" },
+        "V": { "kind": "ground", "height": 0, "terrain": "ground" }
       },
       "rows": [
         "1 1 1 0 0 0 0 1 1 1",
@@ -396,205 +71,34 @@
         "1 1 0 0 0 0 0 0 1 1"
       ],
       "squad": [
-        {
-          "id": "maren",
-          "pos": [
-            4,
-            7
-          ],
-          "facing": "N"
-        },
-        {
-          "id": "tobin",
-          "pos": [
-            5,
-            7
-          ],
-          "facing": "N"
-        },
-        {
-          "id": "wren",
-          "pos": [
-            3,
-            8
-          ],
-          "facing": "N"
-        },
-        {
-          "id": "calla",
-          "pos": [
-            6,
-            8
-          ],
-          "facing": "N"
-        }
+        { "id": "maren", "pos": [4, 7], "facing": "N" },
+        { "id": "tobin", "pos": [6, 7], "facing": "N" },
+        { "id": "wren", "pos": [3, 8], "facing": "N" },
+        { "id": "calla", "pos": [4, 8], "facing": "N" }
       ],
       "enemies": [
-        {
-          "id": "raiderA",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 2,
-          "pos": [
-            3,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "hack"
-          ],
-          "prefers": [
-            "civilian",
-            "backLine"
-          ]
-        },
-        {
-          "id": "raiderB",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 2,
-          "pos": [
-            5,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "hack"
-          ],
-          "prefers": [
-            "civilian",
-            "backLine"
-          ]
-        },
-        {
-          "id": "raiderC",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 2,
-          "pos": [
-            8,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "hack"
-          ],
-          "prefers": [
-            "civilian",
-            "backLine"
-          ]
-        },
-        {
-          "id": "raiderD",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 3,
-          "pos": [
-            1,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "hack",
-            "torch"
-          ],
-          "prefers": [
-            "civilian",
-            "backLine"
-          ]
-        },
-        {
-          "id": "dunmore",
-          "name": "Raider Chief Dunmore",
-          "statClass": "raiderChief",
-          "level": 3,
-          "pos": [
-            6,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "strike",
-            "cleave"
-          ],
-          "leader": true
-        }
+        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 4, "pos": [3, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderB", "name": "Raider", "statClass": "raider", "level": 4, "pos": [5, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 4, "pos": [8, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderD", "name": "Raider", "statClass": "raider", "level": 7, "pos": [1, 0], "facing": "S", "abilities": ["hack", "torch"], "prefers": ["civilian", "backLine"] },
+        { "id": "dunmore", "name": "Raider Chief Dunmore", "statClass": "raiderChief", "level": 7, "pos": [6, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
       ],
       "civilians": [
-        {
-          "id": "villagerA",
-          "name": "Villager",
-          "statClass": "villager",
-          "level": 1,
-          "pos": [
-            3,
-            4
-          ],
-          "facing": "S",
-          "escapeEdge": "S"
-        },
-        {
-          "id": "villagerB",
-          "name": "Villager",
-          "statClass": "villager",
-          "level": 1,
-          "pos": [
-            6,
-            4
-          ],
-          "facing": "S",
-          "escapeEdge": "S"
-        },
-        {
-          "id": "villagerC",
-          "name": "Villager",
-          "statClass": "villager",
-          "level": 1,
-          "pos": [
-            3,
-            5
-          ],
-          "facing": "S",
-          "escapeEdge": "S"
-        },
-        {
-          "id": "villagerD",
-          "name": "Villager",
-          "statClass": "villager",
-          "level": 1,
-          "pos": [
-            6,
-            5
-          ],
-          "facing": "S",
-          "escapeEdge": "S"
-        }
+        { "id": "villagerA", "name": "Villager", "statClass": "villager", "level": 1, "pos": [3, 5], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerB", "name": "Villager", "statClass": "villager", "level": 1, "pos": [6, 5], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerC", "name": "Villager", "statClass": "villager", "level": 1, "pos": [3, 6], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerD", "name": "Villager", "statClass": "villager", "level": 1, "pos": [6, 6], "facing": "S", "escapeEdge": "S" }
       ],
-      "escapeReward": {
-        "morale": 5,
-        "crowns": 10
-      },
+      "escapeReward": { "morale": 5, "crowns": 10 },
       "twists": []
     },
     "saltmarshChapel": {
       "name": "Saltmarsh Chapel",
       "squadLevel": 4,
       "legend": {
-        "M": {
-          "kind": "marsh",
-          "height": 0,
-          "terrain": "marsh"
-        },
-        "X": {
-          "kind": "wall",
-          "height": 0,
-          "terrain": "chapelWall"
-        },
-        "D": {
-          "kind": "ground",
-          "height": 1,
-          "terrain": "chapelDoor"
-        }
+        "M": { "kind": "marsh", "height": 0, "terrain": "marsh" },
+        "X": { "kind": "wall", "height": 0, "terrain": "chapelWall" },
+        "D": { "kind": "ground", "height": 1, "terrain": "chapelDoor" }
       },
       "rows": [
         "M M M 0 0 0 0 M M M",
@@ -609,222 +113,31 @@
         "M M M 0 0 0 0 M M M"
       ],
       "overrides": [
-        {
-          "pos": [
-            7,
-            3
-          ],
-          "terrain": "bellStairs"
-        },
-        {
-          "pos": [
-            7,
-            4
-          ],
-          "terrain": "bellStairs"
-        },
-        {
-          "pos": [
-            7,
-            5
-          ],
-          "terrain": "bellStairs"
-        }
+        { "pos": [7, 3], "terrain": "bellStairs" },
+        { "pos": [7, 4], "terrain": "bellStairs" },
+        { "pos": [7, 5], "terrain": "bellStairs" }
       ],
       "squad": [
-        {
-          "id": "maren",
-          "pos": [
-            3,
-            4
-          ],
-          "facing": "W"
-        },
-        {
-          "id": "tobin",
-          "pos": [
-            5,
-            6
-          ],
-          "facing": "S"
-        },
-        {
-          "id": "wren",
-          "pos": [
-            4,
-            4
-          ],
-          "facing": "W"
-        },
-        {
-          "id": "calla",
-          "pos": [
-            5,
-            4
-          ],
-          "facing": "S"
-        }
+        { "id": "maren", "pos": [3, 4], "facing": "W" },
+        { "id": "tobin", "pos": [5, 6], "facing": "S" },
+        { "id": "wren", "pos": [4, 4], "facing": "W" },
+        { "id": "calla", "pos": [5, 4], "facing": "S" }
       ],
       "enemies": [
-        {
-          "id": "raiderA",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 3,
-          "pos": [
-            0,
-            3
-          ],
-          "facing": "E",
-          "abilities": [
-            "hack",
-            "torch"
-          ],
-          "yieldBelow": 0.25
-        },
-        {
-          "id": "raiderB",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 3,
-          "pos": [
-            9,
-            3
-          ],
-          "facing": "W",
-          "abilities": [
-            "hack",
-            "torch"
-          ],
-          "yieldBelow": 0.25
-        },
-        {
-          "id": "raiderC",
-          "name": "Raider",
-          "statClass": "raider",
-          "level": 3,
-          "pos": [
-            2,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "hack",
-            "torch"
-          ],
-          "yieldBelow": 0.25
-        },
-        {
-          "id": "slingerA",
-          "name": "Raider Slinger",
-          "statClass": "raiderSlinger",
-          "level": 3,
-          "pos": [
-            1,
-            8
-          ],
-          "facing": "N",
-          "abilities": [
-            "sling"
-          ],
-          "yieldBelow": 0.25
-        },
-        {
-          "id": "slingerB",
-          "name": "Raider Slinger",
-          "statClass": "raiderSlinger",
-          "level": 4,
-          "pos": [
-            8,
-            8
-          ],
-          "facing": "N",
-          "abilities": [
-            "sling"
-          ],
-          "yieldBelow": 0.25
-        },
-        {
-          "id": "selka",
-          "name": "Raider Chief Selka",
-          "statClass": "raiderChief",
-          "level": 5,
-          "pos": [
-            5,
-            0
-          ],
-          "facing": "S",
-          "abilities": [
-            "strike",
-            "cleave"
-          ],
-          "leader": true
-        }
+        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 3], "facing": "E", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderB", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 3], "facing": "W", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 3, "pos": [2, 0], "facing": "S", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "slingerA", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 3, "pos": [1, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
+        { "id": "slingerB", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 5, "pos": [8, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
+        { "id": "selka", "name": "Raider Chief Selka", "statClass": "raiderChief", "level": 4, "pos": [5, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
       ],
       "civilians": [],
       "twists": [
-        {
-          "id": "secondWave",
-          "firesAtTurn": 30,
-          "announceTurnsAhead": 1,
-          "effect": "spawn",
-          "units": [
-            {
-              "id": "raiderE",
-              "name": "Raider",
-              "statClass": "raider",
-              "level": 3,
-              "pos": [
-                0,
-                9
-              ],
-              "facing": "N",
-              "abilities": [
-                "hack",
-                "torch"
-              ],
-              "yieldBelow": 0.25
-            },
-            {
-              "id": "raiderF",
-              "name": "Raider",
-              "statClass": "raider",
-              "level": 3,
-              "pos": [
-                9,
-                9
-              ],
-              "facing": "N",
-              "abilities": [
-                "hack",
-                "torch"
-              ],
-              "yieldBelow": 0.25
-            }
-          ]
-        }
+        { "id": "secondWave", "firesAtTurn": 30, "announceTurnsAhead": 1, "effect": "spawn", "units": [
+          { "id": "raiderE", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+          { "id": "raiderF", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 }
+        ] }
       ]
     }
-  },
-  "classes": {
-    "warden": {
-      "name": "Warden",
-      "abilities": [
-        "strike",
-        "shieldBash",
-        "holdTheLine"
-      ],
-      "level": 3
-    },
-    "duelist": {
-      "name": "Duelist",
-      "abilities": [
-        "strike",
-        "lunge",
-        "measuredCut"
-      ],
-      "level": 3
-    }
-  },
-  "_notesAbilities": "Ranks 1-2 abilities reachable in the slice. Pilgrim kit and rank 3 oath abilities (Second Wind, Steadfast, Step Aside, Riposte, Blessing, Vigil, Sanctuary, Light, Absolve) are not in the engine yet: Pilgrim is camp-preview only in the slice and oath classes reach at most rank 2."
+  }
 }

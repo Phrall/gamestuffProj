@@ -168,6 +168,8 @@ export function startNextTurn(state: BattleState): Unit | null {
     // Yield (slice spec §4): checked at the start of the unit's turn.
     if (u.yieldBelow !== undefined && !u.yielding && u.hp <= Math.floor(u.base.hp * u.yieldBelow)) {
       u.yielding = true;
+      // Ember ends when its target starts Yielding, so a burn can't break Mercy on its own (Game Design, Nov 27).
+      u.modifiers = u.modifiers.filter((m) => !m.dot);
       emit(state, { type: 'yield', unitId: u.id });
     }
     return u;
@@ -254,7 +256,7 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
         t.modifiers.push({ move: a.debuff.move, noWaitBonus: a.debuff.noWaitBonus, tauntBy: a.debuff.taunt ? u.id : undefined, source: abilityId, endsOn: 'turnEnd', endsWithUnit: t.id });
       }
       // Ember: ticks at the start of the target's next turns (a new cast replaces the old one).
-      if (a.dot && t.hp > 0) {
+      if (a.dot && t.hp > 0 && !t.yielding) {
         t.modifiers = t.modifiers.filter((m) => m.source !== abilityId || !m.dot);
         t.modifiers.push({ dot: { damage: a.dot.damage, left: a.dot.turns, by: u.id }, source: abilityId, endsOn: 'battleEnd', endsWithUnit: t.id });
       }
@@ -418,9 +420,6 @@ function tickDots(state: BattleState, u: Unit): boolean {
     u.hp -= damage;
     dot.left -= 1;
     emit(state, { type: 'dot', unitId: u.id, damage, hpAfter: u.hp });
-    // An Ember tick is the caster's damage: on a yielding foe it breaks the caster's Mercy (slice test M1).
-    const caster = state.units.find((x) => x.id === dot.by);
-    if (caster && damage > 0) onStrike(state, caster, [{ unitId: u.id, damage }]);
     if (dot.left <= 0) u.modifiers = u.modifiers.filter((x) => x !== m);
     if (u.hp === 0) {
       const by = state.units.find((x) => x.id === dot.by) ?? null;
