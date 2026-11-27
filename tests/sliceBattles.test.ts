@@ -14,7 +14,7 @@ import { battle, flatRows, unit } from './helpers';
 const sturdy = (over: Partial<ReturnType<typeof deriveStats>> = {}) => ({ stats: { hp: 99, atk: 1, mag: 1, def: 0, res: 0, spd: 1, move: 4, jump: 2, eva: 0, ...over } });
 
 describe('slice maps (§5-6)', () => {
-  it('Ashford Green (tune v1): fences, cottage walls and the well rim, with Writer terrain ids', () => {
+  it('Ashford Green (tune v2): fences, cottage walls and the well rim, with Writer terrain ids', () => {
     const { map, units } = sliceSetup('ashfordGreen');
     expect(tileAt(map, { x: 4, y: 2 })).toEqual({ kind: 'fence', height: 0 });
     expect(tileAt(map, { x: 1, y: 1 })).toEqual({ kind: 'wall', height: 0, terrain: 'cottageWall' });
@@ -27,7 +27,7 @@ describe('slice maps (§5-6)', () => {
     expect(units.find((u) => u.id === 'villagerA')!.stats).toMatchObject({ hp: 16, def: 0, res: 1, spd: 4, move: 3, eva: 5 });
   });
 
-  it('Saltmarsh Chapel (tune v1): marsh, chapel walls, doors, bell stairs, the wave twist, and roster stats', () => {
+  it('Saltmarsh Chapel (tune v2): marsh, chapel walls, doors, bell stairs, the wave twist, and roster stats', () => {
     const { map, units, twists } = sliceSetup('saltmarshChapel');
     expect(tileAt(map, { x: 0, y: 0 })).toEqual({ kind: 'marsh', height: 0 });
     expect(tileAt(map, { x: 3, y: 4 })).toEqual({ kind: 'ground', height: 1, terrain: 'chapelDoor' });
@@ -35,7 +35,7 @@ describe('slice maps (§5-6)', () => {
     expect(tileAt(map, { x: 6, y: 4 })).toMatchObject({ kind: 'wall', terrain: 'chapelWall' });
     expect(twists![0]).toMatchObject({ id: 'secondWave', firesAtTurn: 30 });
     expect(units.find((u) => u.id === 'slingerB')!.stats).toMatchObject({ hp: 20, atk: 6, eva: 15, hitBonus: 5 });
-    expect(units.find((u) => u.id === 'selka')!.stats).toMatchObject({ hp: 30, atk: 9, def: 3, res: 3, spd: 6, eva: 13, hitBonus: 4 });
+    expect(units.find((u) => u.id === 'selka')!.stats).toMatchObject({ hp: 32, atk: 10, def: 3, res: 4, spd: 7, eva: 14, hitBonus: 4 });
     expect(units.find((u) => u.id === 'maren')!.stats).toEqual(deriveStats('sellsword', 4));
   });
 

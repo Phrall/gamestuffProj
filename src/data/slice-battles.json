@@ -71,7 +71,7 @@
         "1 1 0 0 0 0 0 0 1 1"
       ],
       "squad": [
-        { "id": "maren", "pos": [4, 7], "facing": "N" },
+        { "id": "maren", "pos": [3, 7], "facing": "N" },
         { "id": "tobin", "pos": [6, 7], "facing": "N" },
         { "id": "wren", "pos": [3, 8], "facing": "N" },
         { "id": "calla", "pos": [4, 8], "facing": "N" }
@@ -118,24 +118,24 @@
         { "pos": [7, 5], "terrain": "bellStairs" }
       ],
       "squad": [
-        { "id": "maren", "pos": [3, 4], "facing": "W" },
+        { "id": "maren", "pos": [4, 5], "facing": "W" },
         { "id": "tobin", "pos": [5, 6], "facing": "S" },
-        { "id": "wren", "pos": [4, 4], "facing": "W" },
+        { "id": "wren", "pos": [4, 3], "facing": "W" },
         { "id": "calla", "pos": [5, 4], "facing": "S" }
       ],
       "enemies": [
-        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 3], "facing": "E", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 5, "pos": [0, 3], "facing": "E", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
         { "id": "raiderB", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 3], "facing": "W", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
-        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 3, "pos": [2, 0], "facing": "S", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 5, "pos": [2, 0], "facing": "S", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
         { "id": "slingerA", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 3, "pos": [1, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
         { "id": "slingerB", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 5, "pos": [8, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
-        { "id": "selka", "name": "Raider Chief Selka", "statClass": "raiderChief", "level": 4, "pos": [5, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
+        { "id": "selka", "name": "Raider Chief Selka", "statClass": "raiderChief", "level": 5, "pos": [5, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
       ],
       "civilians": [],
       "twists": [
         { "id": "secondWave", "firesAtTurn": 30, "announceTurnsAhead": 1, "effect": "spawn", "units": [
-          { "id": "raiderE", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
-          { "id": "raiderF", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 }
+          { "id": "raiderE", "name": "Raider", "statClass": "raider", "level": 5, "pos": [0, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+          { "id": "raiderF", "name": "Raider", "statClass": "raider", "level": 5, "pos": [9, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 }
         ] }
       ]
     }

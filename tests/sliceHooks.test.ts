@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBattle, endTurn, getUnit, startNextTurn, useAbility } from '../src/core/battle';
-import { previewAction } from '../src/core/combat';
+import { HARD_TO_KILL_MIN_PCT, previewAction } from '../src/core/combat';
 import { abilitiesAtRank, battleClassXp, eligibleTraits, rankFor, unlockedClasses } from '../src/core/jobs';
 import { effectiveStats } from '../src/core/stats';
 import { parseMap, type BattleSetup } from '../src/data';
@@ -24,6 +24,23 @@ describe('Hard to Kill (§9.4)', () => {
     const again = previewAction(s, getUnit(s, 'e'), 'strike', { x: 1, y: 0 });
     expect(again.victims[0]).toMatchObject({ hpAfter: 0, downs: true });
     expect(again.victims[0]!.survives).toBeUndefined();
+  });
+});
+
+describe('Hard to Kill v3 (tune v2)', () => {
+  it('saves only from at least minPct (20%) of max HP', () => {
+    const at = (hp: number) => {
+      const s = battle(flatRows(3, 1), [
+        unit('e', 'enemy', 'sellsword', 0, 0, 'E', { stats: weak }),
+        unit('m', 'player', 'sellsword', 1, 0, 'W', { ...slow(20), traits: ['hardToKill'] }),
+      ]);
+      getUnit(s, 'm').hp = hp;
+      return previewAction(s, getUnit(s, 'e'), 'strike', { x: 1, y: 0 }).victims[0]!;
+    };
+    expect(HARD_TO_KILL_MIN_PCT).toBe(20);
+    expect(at(4)).toMatchObject({ survives: 'hardToKill', hpAfter: 1 }); // 4/20 = 20%
+    expect(at(3).survives).toBeUndefined();
+    expect(at(3).downs).toBe(true);
   });
 });
 
