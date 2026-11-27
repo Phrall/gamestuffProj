@@ -103,9 +103,12 @@ function expireModifiers(state: BattleState, unitId: string, when: 'turnStart' |
 function checkWinner(state: BattleState): void {
   if (state.winner) return;
   for (const team of ['enemy', 'player'] as Team[]) {
+    const wiped = state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok');
     // Units a spawn twist has yet to bring in count toward the win condition (slice spec §10).
-    const pending = state.twists.some((t) => !t.fired && t.def.effect === 'spawn' && t.units.some((s) => s.team === team));
-    if (!pending && state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok')) {
+    // If the side is cleared early, the wave is pulled forward: announced next turn, arriving the turn after.
+    const pending = state.twists.filter((t) => !t.fired && t.def.effect === 'spawn' && t.units.some((s) => s.team === team));
+    if (wiped) for (const t of pending) t.def.firesAtTurn = Math.min(t.def.firesAtTurn, state.turnNumber + 1 + t.def.announceTurnsAhead);
+    if (!pending.length && wiped) {
       state.winner = enemyOf(team);
       state.activeId = null;
       resolveVowsAtEnd(state);

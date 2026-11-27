@@ -77,11 +77,19 @@ describe('spawn twist (§10)', () => {
     expect(getUnit(s, 'r2')).toMatchObject({ pos: { x: 4, y: 4 }, status: 'ok', ct: 0 });
   });
 
-  it('the battle is not won while a wave is still to come', () => {
-    const s = createBattle(setup(), 1);
-    getUnit(s, 'e').status = 'lost';
-    expect(startNextTurn(s)).not.toBeNull();
+  it('the battle is not won while a wave is still to come; an early clear pulls the wave forward', () => {
+    const t = setup();
+    t.twists![0]!.firesAtTurn = 30;
+    const s = createBattle(t, 1);
+    getUnit(s, 'e').status = 'lost'; // cleared before turn 1
+    expect(startNextTurn(s)).not.toBeNull(); // turn 1: banner, wave pulled to turn 2
     expect(s.winner).toBeNull();
+    expect(s.events.some((e) => e.type === 'twistAnnounce' && e.firesAtTurn === 2)).toBe(true);
+    expect(s.events.some((e) => e.type === 'twist')).toBe(false);
+    endTurn(s);
+    startNextTurn(s); // turn 2: arrival
+    expect(s.events.some((e) => e.type === 'twist')).toBe(true);
+    expect(getUnit(s, 'r1').status).toBe('ok');
   });
 });
 
