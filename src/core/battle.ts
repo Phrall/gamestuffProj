@@ -418,6 +418,9 @@ function tickDots(state: BattleState, u: Unit): boolean {
     u.hp -= damage;
     dot.left -= 1;
     emit(state, { type: 'dot', unitId: u.id, damage, hpAfter: u.hp });
+    // An Ember tick is the caster's damage: on a yielding foe it breaks the caster's Mercy (slice test M1).
+    const caster = state.units.find((x) => x.id === dot.by);
+    if (caster && damage > 0) onStrike(state, caster, [{ unitId: u.id, damage }]);
     if (dot.left <= 0) u.modifiers = u.modifiers.filter((x) => x !== m);
     if (u.hp === 0) {
       const by = state.units.find((x) => x.id === dot.by) ?? null;

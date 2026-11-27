@@ -61,6 +61,19 @@ describe('slice abilities', () => {
     expect(getUnit(s, 'c').defeats).toBe(1);
   });
 
+  it('an Ember tick on a yielding foe breaks the caster\'s Mercy', () => {
+    const s = battle(flatRows(4, 1), [unit('c', 'player', 'hedgeMage', 0, 0, 'E', { stats: { ...deriveStats('hedgeMage', 3), ...fast }, abilities: ['ember'] }), unit('e', 'enemy', 'sellsword', 2, 0, 'W', { ...dummy({ spd: 6 }), yieldBelow: 0.25 })]);
+    swearVow(s, 'c', 'mercy');
+    startNextTurn(s);
+    useAbility(s, 'c', 'ember', { x: 2, y: 0 });
+    endTurn(s);
+    expect(s.vows.c!.status).toBe('intact'); // not yielding when hit
+    getUnit(s, 'e').yielding = true;
+    let u = startNextTurn(s)!;
+    while (u.id !== 'e') { endTurn(s); u = startNextTurn(s)!; }
+    expect(s.vows.c!.status).toBe('broken');
+  });
+
   it('Shield Bash: Shove-style push with +3 if blocked, and the target loses its Wait bonus', () => {
     const s = battle(flatRows(3, 1), [unit('m', 'player', 'warden', 1, 0, 'E', { stats: { ...deriveStats('warden', 3), ...fast, hitBonus: 200 } }), unit('e', 'enemy', 'sellsword', 2, 0, 'W', dummy())]);
     startNextTurn(s);
