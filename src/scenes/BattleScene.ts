@@ -1239,8 +1239,9 @@ export default class BattleScene extends Phaser.Scene {
       const chip = hudImage(this, X(cx), X(4), `gui-chip-${out ? 3 : lit ? 2 : 0}`);
       const hit = chip ?? this.add.rectangle(X(cx), X(4), X(32), X(32), u.team === 'player' ? 0x0c4a6e : 0x7f1d1d).setOrigin(0).setStrokeStyle(X(1), lit ? COLORS.hover : COLORS.panelEdge);
       hit.setInteractive({ useHandCursor: true });
-      hit.on('pointerover', () => { this.hoverUnitId = u.id; this.refreshUnits(); this.refreshTimeline(); });
-      hit.on('pointerout', () => { this.hoverUnitId = null; this.refreshUnits(); this.refreshTimeline(); });
+      // A full refresh, so hovering an enemy's chip shows its reach on the map too (UX slice §2, QA on #52).
+      hit.on('pointerover', () => { this.hoverUnitId = u.id; this.refresh(); });
+      hit.on('pointerout', () => { this.hoverUnitId = null; this.refresh(); });
       // Clicking a chip points at that unit's tile, so units hidden on the board can still be targeted.
       hit.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
         ev.stopPropagation();
@@ -1707,6 +1708,10 @@ export default class BattleScene extends Phaser.Scene {
       lines.push(x.reason === 'cooldown' ? t('ui.fromTile.cooling', { ability: abilityLabel(x.abilityId), n: x.readyIn ?? 0 }) : t('ui.fromTile.used', { ability: abilityLabel(x.abilityId) }));
     }
     if (mp.breaksLoneBlade) lines.push(t('ui.fromTile.breaksLoneBlade'));
+    // UX slice §2: a move tile inside the danger zone says who could hit it next turn.
+    const at = this.hover;
+    const by = at ? this.danger().reaches.filter((r) => r.hit.some((p) => samePoint(p, at))).map((r) => shortName(getUnit(this.state, r.unitId))) : [];
+    if (by.length) lines.push(`⚠ In reach of ${by.length}: ${by.join(', ')}`);
     return lines.join('\n');
   }
 
