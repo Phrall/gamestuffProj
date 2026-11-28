@@ -122,6 +122,8 @@ export interface Unit {
   /** Data-file order (players, then enemies); breaks every tie (§13.2). */
   order: number;
   ai?: { holdUntilWithin?: number; prefersHeight?: number; healBelow?: number };
+  /** Trait slot contents (job system §9.4). Passives here work like the class's own. */
+  traits: string[];
 }
 
 export interface VictimPreview {
@@ -138,6 +140,8 @@ export interface VictimPreview {
   revives: boolean;
   /** Shove: where the target ends up, if it moves. */
   pushedTo?: Point;
+  /** A trait keeps the target standing (Hard to Kill: "survives at 1"). */
+  survives?: string;
 }
 
 export interface ActionPreview {
@@ -168,6 +172,9 @@ export type BattleEvent =
   | { type: 'vowBroken'; unitId: string; vowId: VowId; cause: string }
   | { type: 'vowFrozen'; unitId: string; vowId: VowId }
   | { type: 'intercept'; unitId: string; protectedId: string; attackerId: string }
+  | { type: 'trait'; unitId: string; traitId: string; heal?: number }
+  | { type: 'twistAnnounce'; twistId: string; firesAtTurn: number; tiles: Point[] }
+  | { type: 'twist'; twistId: string; spawned: string[] }
   | { type: 'battleEnd'; winner: Team };
 
 export interface VictimResult {
@@ -177,4 +184,20 @@ export interface VictimResult {
   heal: number;
   hpAfter: number;
   pushedTo?: Point;
+}
+
+/** A scripted battle event at a fixed battle turn (slice spec §10). */
+export interface TwistDef {
+  id: string;
+  /** Fires at the start of this battle turn (every unit's turn counts). */
+  firesAtTurn: number;
+  /** The announce event comes at the start of turn firesAtTurn - announceTurnsAhead. */
+  announceTurnsAhead: number;
+  effect: 'spawn';
+}
+
+export interface TwistState {
+  def: TwistDef;
+  announced: boolean;
+  fired: boolean;
 }

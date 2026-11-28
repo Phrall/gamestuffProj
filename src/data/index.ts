@@ -1,7 +1,7 @@
 // Typed access to the Game Design data file. Design edits prototype-data.json;
 // this file only reshapes it for the engine.
 import raw from './prototype-data.json';
-import type { AbilityDef, Facing, GridMap, Stats, Tile } from '../core/types';
+import type { AbilityDef, Facing, GridMap, Stats, Tile, TwistDef } from '../core/types';
 
 export type Rules = typeof raw.rules;
 export const RULES: Rules = raw.rules;
@@ -96,9 +96,14 @@ export interface UnitSetup {
   facing: Facing;
   ai?: { holdUntilWithin?: number; prefersHeight?: number; healBelow?: number };
   suggestedVow?: 'bulwark' | 'loneBlade' | null;
+  /** Trait slot (job system §9.4). */
+  traits?: string[];
 }
 
-export interface BattleSetup { map: GridMap; units: UnitSetup[] }
+/** A spawn twist carries the units it brings in. */
+export interface TwistSetup extends TwistDef { units: UnitSetup[] }
+
+export interface BattleSetup { map: GridMap; units: UnitSetup[]; twists?: TwistSetup[] }
 
 export function millFordSetup(): BattleSetup {
   const units: UnitSetup[] = [];

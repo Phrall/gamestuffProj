@@ -1,0 +1,373 @@
+{
+  "version": "1.0",
+  "notes": "Vertical slice job system (vertical-slice-spec section 9). Ranks 1-3 are in the slice; rank 4-5 entries, hybrids, xpShare and chapter caps are placeholders so the data has room.",
+  "classXp": {
+    "appliesTo": "primary",
+    "perBattleDeployed": 30,
+    "perAction": 5,
+    "perSupportActionBonus": 5,
+    "supportAbilities": [
+      "mend",
+      "ward",
+      "brace",
+      "rallyCry",
+      "holdTheLine",
+      "challenge",
+      "sanctuary",
+      "blessing",
+      "absolve",
+      "stepAside",
+      "secondWind"
+    ],
+    "perDefeat": 10,
+    "perIntercept": 5,
+    "lostUnitsKeepXp": true,
+    "xpShare": {
+      "secondary": 0,
+      "bench": 0
+    },
+    "chapterCap": {
+      "act1": {
+        "level": null,
+        "rank": 3
+      }
+    }
+  },
+  "rankThresholds": {
+    "1": 0,
+    "2": 50,
+    "3": 120,
+    "4": 240,
+    "5": 400
+  },
+  "classes": {
+    "sellsword": {
+      "tier": "base",
+      "ranks": {
+        "1": [
+          "strike",
+          "cleave",
+          "shove",
+          "brace",
+          "rallyCry"
+        ],
+        "2": [
+          "hamstring"
+        ],
+        "3": [
+          "hardToKill"
+        ],
+        "4": [],
+        "5": [
+          "mastery:sellsword"
+        ]
+      },
+      "passive": "hardToKill"
+    },
+    "bowhand": {
+      "tier": "base",
+      "ranks": {
+        "1": [
+          "shoot",
+          "aimedShot",
+          "pinningArrow",
+          "volley",
+          "sureFooting"
+        ],
+        "2": [
+          "pointBlank"
+        ],
+        "3": [],
+        "4": [],
+        "5": [
+          "mastery:bowhand"
+        ]
+      },
+      "passive": "sureFooting"
+    },
+    "hedgeMage": {
+      "tier": "base",
+      "ranks": {
+        "1": [
+          "spark",
+          "mend",
+          "ward",
+          "thornsnare",
+          "kindle"
+        ],
+        "2": [
+          "ember"
+        ],
+        "3": [
+          "hedgeLore"
+        ],
+        "4": [],
+        "5": [
+          "mastery:hedgeMage"
+        ]
+      },
+      "passive": "hedgeLore"
+    },
+    "warden": {
+      "tier": "oath",
+      "vow": "bulwark",
+      "ranks": {
+        "1": [
+          "strike",
+          "shieldBash",
+          "holdTheLine"
+        ],
+        "2": [
+          "challenge"
+        ],
+        "3": [
+          "secondWind",
+          "steadfast"
+        ],
+        "4": [],
+        "5": [
+          "mastery:warden"
+        ]
+      },
+      "passive": "steadfast"
+    },
+    "duelist": {
+      "tier": "oath",
+      "vow": "loneBlade",
+      "ranks": {
+        "1": [
+          "strike",
+          "lunge",
+          "measuredCut"
+        ],
+        "2": [
+          "feint"
+        ],
+        "3": [
+          "stepAside",
+          "riposte"
+        ],
+        "4": [],
+        "5": [
+          "mastery:duelist"
+        ]
+      },
+      "passive": "riposte"
+    },
+    "pilgrim": {
+      "tier": "oath",
+      "vow": "mercy",
+      "ranks": {
+        "1": [
+          "light",
+          "mend",
+          "absolve"
+        ],
+        "2": [
+          "sanctuary"
+        ],
+        "3": [
+          "blessing",
+          "vigil"
+        ],
+        "4": [],
+        "5": [
+          "mastery:pilgrim"
+        ]
+      },
+      "passive": "vigil"
+    }
+  },
+  "unlocks": {
+    "warden": {
+      "resolve": {
+        "vow": "bulwark",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "sellsword",
+          "rank": 2
+        }
+      ]
+    },
+    "duelist": {
+      "resolve": {
+        "vow": "loneBlade",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "sellsword",
+          "rank": 2
+        },
+        {
+          "class": "bowhand",
+          "rank": 2
+        }
+      ]
+    },
+    "pilgrim": {
+      "resolve": {
+        "vow": "mercy",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "hedgeMage",
+          "rank": 2
+        }
+      ]
+    },
+    "forsworn": {
+      "shadow": {
+        "vow": "bulwark",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "sellsword",
+          "rank": 2
+        }
+      ],
+      "inSlice": false
+    },
+    "reaver": {
+      "shadow": {
+        "vow": "loneBlade",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "sellsword",
+          "rank": 2
+        },
+        {
+          "class": "bowhand",
+          "rank": 2
+        }
+      ],
+      "inSlice": false
+    },
+    "executioner": {
+      "shadow": {
+        "vow": "mercy",
+        "min": 4
+      },
+      "anyOf": [
+        {
+          "class": "hedgeMage",
+          "rank": 2
+        }
+      ],
+      "inSlice": false
+    },
+    "hybrids": []
+  },
+  "traitSlots": 1,
+  "traits": {
+    "hardToKill": {
+      "from": "sellsword",
+      "rank": 3,
+      "effect": "Once per battle, a hit that would down this unit leaves it at 1 HP instead."
+    },
+    "sureFooting": {
+      "from": "bowhand",
+      "rank": 3,
+      "effect": "Jump +1; climbing costs no extra Move."
+    },
+    "hedgeLore": {
+      "from": "hedgeMage",
+      "rank": 3,
+      "effect": "At the start of its turn, heal 2 HP if no foe is adjacent."
+    },
+    "steadfast": {
+      "from": "warden",
+      "rank": 3,
+      "effect": "+2 Def while an ally is adjacent."
+    },
+    "riposte": {
+      "from": "duelist",
+      "rank": 3,
+      "effect": "When a front melee attack misses this unit, strike back for power 3 (exact, always hits)."
+    },
+    "vigil": {
+      "from": "pilgrim",
+      "rank": 3,
+      "effect": "Downed allies within 3 tiles lose a revive tick only every other turn."
+    }
+  },
+  "twists": {
+    "millFord": {
+      "id": "sluice",
+      "firesAtTurn": 18,
+      "endsAtTurn": 36,
+      "announceTurnsAhead": 1,
+      "effect": "fordTilesBecomeWater",
+      "displaced": "nearestFreeGround",
+      "inSlice": false
+    },
+    "ashfordGreen": {
+      "id": "torchedFence",
+      "firesAtTurn": 20,
+      "announceTurnsAhead": 1,
+      "effect": "removeFence",
+      "tiles": [
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          2
+        ]
+      ],
+      "notSimulated": true,
+      "inSlice": false
+    },
+    "saltmarshChapel": {
+      "id": "secondWave",
+      "firesAtTurn": 30,
+      "announceTurnsAhead": 1,
+      "effect": "spawn",
+      "units": [
+        {
+          "statClass": "raider",
+          "level": 3,
+          "pos": [
+            0,
+            9
+          ]
+        },
+        {
+          "statClass": "raider",
+          "level": 3,
+          "pos": [
+            9,
+            9
+          ]
+        }
+      ],
+      "notSimulated": true,
+      "inSlice": true
+    }
+  },
+  "vowRisk": {
+    "bulwark": {
+      "breakableByEnemy": true,
+      "predicate": "an enemy attack previewed this turn could down an ally within breakRadius (3) of the sworn unit"
+    },
+    "loneBlade": {
+      "breakableByEnemy": false
+    },
+    "mercy": {
+      "breakableByEnemy": false
+    }
+  },
+  "undo": {
+    "blockingMoveEvents": []
+  },
+  "vowRanksInSlice": [
+    1
+  ]
+}
