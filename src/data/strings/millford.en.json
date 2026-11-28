@@ -1,5 +1,5 @@
 {
-  "version": "0.5",
+  "version": "0.6",
   "locale": "en",
   "dataVersion": "1.7",
   "_notes": "Placeholders in {braces} are filled by code. Reaction 'held' is Bulwark only. Reaction 'lost': on the Reckoning, use it instead of the vow-result quote for any sworn unit that ended the battle downed or lost. Scenes play unchanged when a unit is lost: lost means carried off wounded, not dead (permadeath is off), so they can still speak afterwards. Barks: pick one at random per event; 'shaken' plays once when squad morale enters Shaken.",
@@ -455,7 +455,7 @@
       },
       "frozen": {
         "label": "Frozen",
-        "tooltip": "Downed. The vow can't break while frozen and resolves at battle end."
+        "tooltip": "Downed. The vow can't break now, and it lapses unless this unit is standing at battle end."
       },
       "lapsed": {
         "label": "Lapsed",
