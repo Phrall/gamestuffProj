@@ -85,6 +85,10 @@ export const abilityLabel = (id: string): string => {
 
 /** lp to layout units (view.ts: 2 layout units per lp). The HUD is specified in lp (UX §8). */
 const X = (v: number): number => v * LP;
+/** Top of the map safe area in lp: under the timeline chips and their name labels (QA S3; UX §8 said 50). */
+const SAFE_TOP = 48;
+/** Framing puts a box edge exactly on the safe edge; float error must not read that as out (QA on #59). */
+const EDGE_EPS = 1;
 const DARK = '#1f1e1b';
 const BONE = '#ede6d3';
 
@@ -1864,10 +1868,10 @@ export default class BattleScene extends Phaser.Scene {
     this.refresh();
   }
 
-  /** Map safe area centre in layout units (UX §8: y 50 to H - 117 lp); centring and pans aim here. */
+  /** Map safe area centre in layout units (UX §8: y SAFE_TOP to H - 117 lp); centring and pans aim here. */
   private safeCentre(): Vec {
     const { w: W, h: H } = screenLp();
-    return { x: X(W / 2), y: X((50 + H - 117) / 2) };
+    return { x: X(W / 2), y: X((SAFE_TOP + H - 117) / 2) };
   }
 
   /** Camera scroll that puts world point w at the safe-area centre. */
@@ -1886,7 +1890,7 @@ export default class BattleScene extends Phaser.Scene {
     const b = this.mapBounds();
     const { w: W, h: H } = screenLp();
     const z = this.cameras.main.zoom / layoutScale(); // device px per world px, over device px per lp
-    const sw = X(W) / z, sh = X(H - 117 - 50) / z; // safe area in world px
+    const sw = X(W) / z, sh = X(H - 117 - SAFE_TOP) / z; // safe area in world px
     const fit = (v: number, lo: number, hi: number, span: number) => {
       const a = lo - span * 0.25 + span / 2, c = hi + span * 0.25 - span / 2;
       return a > c || hi - lo <= span ? (lo + hi) / 2 : Math.min(c, Math.max(a, v));
@@ -1916,8 +1920,41 @@ export default class BattleScene extends Phaser.Scene {
     c.setZoom(layoutScale() * mapHome());
     this.lastCamSize = { w: c.width, h: c.height };
     const u = activeUnit(this.state);
-    const m = this.scrollToSafe(this.clampToMap(u ? tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos)) : this.mapMiddle()));
+    const m = this.scrollToSafe(this.frameUnits(this.clampToMap(u ? tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos)) : this.mapMiddle())));
     c.setScroll(m.x, m.y);
+  }
+
+  /** World box around every unit still on the board (body art, as keepClear measures it). */
+  private unitsBox(): { l: number; r: number; t: number; b: number } | null {
+    const us = this.state.units.filter((u) => u.status !== 'lost');
+    if (!us.length) return null;
+    const ws = us.map((u) => tileCenter(this.iso, u.pos.x, u.pos.y, this.drawH(u.pos)));
+    return { l: Math.min(...ws.map((w) => w.x)) - 20, r: Math.max(...ws.map((w) => w.x)) + 20, t: Math.min(...ws.map((w) => w.y)) - 60, b: Math.max(...ws.map((w) => w.y)) + 12 };
+  }
+
+  /**
+   * QA S3 (gate report): move a safe-area centre the least distance that puts every unit inside the safe area,
+   * so nobody starts under the timeline or the bottom panels. If they can't all fit, keep the top row clear.
+   */
+  private frameUnits(want: Vec): Vec {
+    const box = this.unitsBox();
+    if (!box) return want;
+    const { w: W, h: H } = screenLp();
+    const z = this.cameras.main.zoom / layoutScale();
+    const sw = X(W) / z, sh = X(H - 117 - SAFE_TOP) / z;
+    // Too big to fit: centre across, and keep the top row clear of the timeline (that's where picks were lost).
+    const axis = (v: number, lo: number, hi: number, span: number, tooBig: number) => (hi - lo > span ? tooBig : Math.min(lo + span / 2, Math.max(hi - span / 2, v)));
+    return { x: axis(want.x, box.l, box.r, sw, (box.l + box.r) / 2), y: axis(want.y, box.t, box.b, sh, box.t + sh / 2) };
+  }
+
+  /** True if any unit's body is outside the safe area at the current scroll. */
+  private unitsOutOfSafe(): boolean {
+    const box = this.unitsBox();
+    if (!box) return false;
+    const ls = layoutScale();
+    const { w: W, h: H } = screenLp();
+    const tl = this.toScreen({ x: box.l, y: box.t }), br = this.toScreen({ x: box.r, y: box.b });
+    return tl.y / ls < X(SAFE_TOP) - EDGE_EPS || br.y / ls > X(H - 117) + EDGE_EPS || tl.x / ls < -EDGE_EPS || br.x / ls > X(W) + EDGE_EPS;
   }
 
   private lastLayoutScale = layoutScale();
@@ -1996,12 +2033,13 @@ export default class BattleScene extends Phaser.Scene {
     const out = pts.some((p) => {
       const c = this.toScreen(tileCenter(this.iso, p.x, p.y, this.drawH(p)));
       const top = (c.y - 60 * z) / ls, bottom = (c.y + 12 * z) / ls, l = (c.x - 20 * z) / ls, r = (c.x + 20 * z) / ls;
-      return top < X(50) || bottom > X(H - 117) || l < 0 || r > X(W);
+      return top < X(SAFE_TOP) - EDGE_EPS || bottom > X(H - 117) + EDGE_EPS || l < -EDGE_EPS || r > X(W) + EDGE_EPS;
     });
     if (!out) return;
     const ws = pts.map((p) => tileCenter(this.iso, p.x, p.y, this.drawH(p)));
     const mid = { x: ws.reduce((a, w) => a + w.x, 0) / ws.length, y: ws.reduce((a, w) => a + w.y, 0) / ws.length - 20 };
-    const to = this.scrollToSafe(this.clampToMap(mid));
+    // QA on #59: the pan must not push other units back under the timeline, so it goes through frameUnits too.
+    const to = this.scrollToSafe(this.frameUnits(this.clampToMap(mid)));
     this.tweens.add({ targets: this.cameras.main, scrollX: to.x, scrollY: to.y, duration: 200, ease: 'Sine.easeInOut' });
   }
 
@@ -2061,7 +2099,21 @@ export default class BattleScene extends Phaser.Scene {
     const p = this.input.activePointer;
     this.hover = this.onBoard(p) ? this.pick(this.cameras.main.getWorldPoint(p.x, p.y)) : this.hover;
     this.refresh();
-    this.keepClear();
+    // QA S3: after a turn, frame every unit inside the safe area if any went under the HUD; else keep the active unit clear.
+    if (this.unitsOutOfSafe()) {
+      const c = this.cameras.main;
+      const cur = this.safeWorldCentre();
+      const to = this.scrollToSafe(this.frameUnits(cur));
+      this.tweens.add({ targets: c, scrollX: to.x, scrollY: to.y, duration: 200, ease: 'Sine.easeInOut', onComplete: () => this.keepClear() });
+    } else this.keepClear();
+  }
+
+  /** The world point currently at the safe-area centre (inverse of scrollToSafe). */
+  private safeWorldCentre(): Vec {
+    const c = this.cameras.main;
+    const s = this.safeCentre();
+    const ls = layoutScale();
+    return { x: c.scrollX + c.width / 2 + (s.x * ls - c.width / 2) / c.zoom, y: c.scrollY + c.height / 2 + (s.y * ls - c.height / 2) / c.zoom };
   }
 
   private drawCompass(): void {
@@ -2203,7 +2255,7 @@ export default class BattleScene extends Phaser.Scene {
     const raw = this.toScreen(tileCenter(this.iso, p.x, p.y, this.drawH(p)));
     const sx = raw.x / ls, sy = raw.y / ls;
     const { w: W, h: H } = screenLp();
-    if (sx > 80 && sx < X(W) - 80 && sy > X(50) + 60 && sy < X(H - 117) - 20) return;
+    if (sx > 80 && sx < X(W) - 80 && sy > X(SAFE_TOP) + 60 && sy < X(H - 117) - 20) return;
     const c = this.cameras.main;
     const to = this.scrollToSafe(tileCenter(this.iso, p.x, p.y, this.drawH(p)));
     this.tweens.add({ targets: c, scrollX: to.x, scrollY: to.y, duration: 150, ease: 'Sine.easeOut' });
