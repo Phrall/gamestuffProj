@@ -21,7 +21,7 @@ export function tileAt(map: GridMap, p: Point): Tile | undefined {
 }
 
 export function isPassable(tile: Tile | undefined): boolean {
-  return !!tile && tile.kind !== 'water' && tile.kind !== 'boulder';
+  return !!tile && tile.kind !== 'water' && tile.kind !== 'boulder' && tile.kind !== 'fence' && tile.kind !== 'wall';
 }
 
 export function heightAt(map: GridMap, p: Point): number {

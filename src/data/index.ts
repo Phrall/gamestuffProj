@@ -1,11 +1,14 @@
 // Typed access to the Game Design data file. Design edits prototype-data.json;
 // this file only reshapes it for the engine.
 import raw from './prototype-data.json';
+import slice from './slice-battles.json';
 import type { AbilityDef, Facing, GridMap, Stats, Tile, TwistDef } from '../core/types';
 
 export type Rules = typeof raw.rules;
 export const RULES: Rules = raw.rules;
-export const VOWS = raw.vows;
+/** Slice battles 2-3 data (Game Design). Its stat classes, gear, abilities and vows extend the prototype's. */
+export const SLICE = slice;
+export const VOWS = { ...raw.vows, ...slice.vows };
 
 interface RawStats { hp: number; atk: number; mag: number; def: number; res: number; spd: number; move: number; jump: number; eva: number }
 
@@ -17,9 +20,9 @@ interface StatClass { base: Attributes; growthPerLevel: Attributes; move: number
 interface Weapon { atk?: number; mag?: number }
 interface Armor { def: number; res: number; weight: number }
 
-export const STAT_CLASSES = raw.statClasses as Record<string, StatClass>;
-export const WEAPONS = raw.weapons as Record<string, Weapon>;
-export const ARMOR = raw.armor as Record<string, Armor>;
+export const STAT_CLASSES = { ...raw.statClasses, ...slice.statClasses } as Record<string, StatClass>;
+export const WEAPONS = { ...raw.weapons, ...slice.weapons } as Record<string, Weapon>;
+export const ARMOR = { ...raw.armor, ...slice.armor } as Record<string, Armor>;
 const ATTRS = raw.statRules.attributes as Attr[];
 
 /** Attribute at level L = class base + floor(growth × (L − 1)). Growth is fixed, so no random level-ups. */
@@ -54,7 +57,7 @@ export function deriveStats(statClass: string, level: number): Stats {
 export const RAW_DATA = raw;
 
 export const ABILITIES: Record<string, AbilityDef> = Object.fromEntries(
-  Object.entries(raw.abilities).map(([id, a]) => [id, { id, ...(a as Omit<AbilityDef, 'id'>) }]),
+  Object.entries({ ...raw.abilities, ...slice.abilities }).map(([id, a]) => [id, { id, ...(a as Omit<AbilityDef, 'id'>) }]),
 );
 
 export interface ClassData { id: string; name: string; stats: Stats; abilities: string[] }
@@ -63,13 +66,23 @@ export const CLASSES: Record<string, ClassData> = Object.fromEntries(
   Object.entries(raw.classes).map(([id, c]) => [id, { id, name: c.name, stats: { ...(c.stats as RawStats) }, abilities: c.abilities }]),
 );
 
-export function parseMap(m: { id: string; name: string; width: number; height: number; rows: string[] }): GridMap {
+export interface LegendEntry { kind: Tile['kind']; height: number; terrain?: string }
+
+/** Parse a map. Mill Ford's codes (W water, X boulder, F ford, B bridge) apply unless `codes` gives a map's own legend. */
+export function parseMap(m: { id: string; name: string; width: number; height: number; rows: string[]; codes?: Record<string, LegendEntry> }): GridMap {
   const tiles: Tile[] = [];
   if (m.rows.length !== m.height) throw new Error(`map ${m.id}: expected ${m.height} rows`);
   for (const row of m.rows) {
     const cells = row.trim().split(/\s+/);
     if (cells.length !== m.width) throw new Error(`map ${m.id}: row "${row}" is not ${m.width} wide`);
     for (const c of cells) {
+      const l = m.codes?.[c];
+      if (m.codes) {
+        if (l) tiles.push({ kind: l.kind, height: l.height, ...(l.terrain && l.terrain !== l.kind ? { terrain: l.terrain } : {}) });
+        else if (Number.isInteger(Number(c))) tiles.push({ kind: 'ground', height: Number(c) });
+        else throw new Error(`map ${m.id}: bad cell "${c}"`);
+        continue;
+      }
       if (c === 'W') tiles.push({ kind: 'water', height: 0 });
       else if (c === 'X') tiles.push({ kind: 'boulder', height: 0 });
       else if (c === 'F') tiles.push({ kind: 'ford', height: 0 });
@@ -98,6 +111,10 @@ export interface UnitSetup {
   suggestedVow?: 'bulwark' | 'loneBlade' | null;
   /** Trait slot (job system §9.4). */
   traits?: string[];
+  yieldBelow?: number;
+  civilian?: boolean;
+  escapeEdge?: Facing;
+  prefers?: ('civilian' | 'backLine')[];
 }
 
 /** A spawn twist carries the units it brings in. */
@@ -128,4 +145,42 @@ export function millFordSetup(): BattleSetup {
     });
   }
   return { map: parseMap(raw.map), units };
+}
+
+// ---------- slice battles 2-3 (vertical-slice-spec §5-6) ----------
+
+export type SliceBattleId = keyof typeof slice.battles;
+type SliceUnit = { id: string; name: string; statClass: string; level: number; pos: number[]; facing: string; abilities?: string[]; leader?: boolean; yieldBelow?: number; prefers?: string[]; escapeEdge?: string };
+
+function sliceUnit(u: SliceUnit, team: 'player' | 'enemy', civilian = false): UnitSetup {
+  return {
+    id: u.id, name: u.name, team, classId: null, leader: !!u.leader,
+    stats: deriveStats(u.statClass, u.level), abilities: [...(u.abilities ?? [])],
+    pos: { x: u.pos[0]!, y: u.pos[1]! }, facing: u.facing as Facing,
+    ...(u.yieldBelow !== undefined ? { yieldBelow: u.yieldBelow } : {}),
+    ...(u.prefers ? { prefers: u.prefers as UnitSetup['prefers'] } : {}),
+    ...(civilian ? { civilian: true, escapeEdge: u.escapeEdge as Facing } : {}),
+  };
+}
+
+/** Battle 2 or 3 at the spec's squad level. The squad is the Mill Ford four in their prototype classes. */
+export function sliceSetup(id: SliceBattleId, opts: { squadLevel?: number } = {}): BattleSetup {
+  const b = slice.battles[id] as (typeof slice.battles)[SliceBattleId] & { overrides?: { pos: number[]; terrain: string }[] };
+  const map = parseMap({ id, name: b.name, width: b.rows[0]!.split(' ').length, height: b.rows.length, rows: b.rows, codes: b.legend as Record<string, LegendEntry> });
+  for (const o of b.overrides ?? []) map.tiles[o.pos[1]! * map.width + o.pos[0]!]!.terrain = o.terrain;
+  const level = opts.squadLevel ?? b.squadLevel;
+  const units: UnitSetup[] = b.squad.map((s) => {
+    const p = raw.playerUnits.find((x) => x.id === s.id)!;
+    const cls = CLASSES[p.class]!;
+    return {
+      id: p.id, name: p.name, team: 'player' as const, classId: p.class, leader: false,
+      stats: deriveStats(p.class, level), abilities: [...cls.abilities],
+      pos: { x: s.pos[0]!, y: s.pos[1]! }, facing: s.facing as Facing,
+    };
+  });
+  for (const e of b.enemies as SliceUnit[]) units.push(sliceUnit(e, 'enemy'));
+  for (const c of b.civilians as SliceUnit[]) units.push(sliceUnit(c, 'player', true));
+  const twists = (b.twists as { id: string; firesAtTurn: number; announceTurnsAhead: number; effect: 'spawn'; units: SliceUnit[] }[])
+    .map((t) => ({ ...t, units: t.units.map((u) => sliceUnit(u, 'enemy')) }));
+  return { map, units, twists };
 }

@@ -1,4 +1,4 @@
-import { advance, bestAttack, type AiPlan } from './ai';
+import { advance, bestAttack, planEscape, type AiPlan } from './ai';
 import type { BattleState } from './battle';
 import { abilityReady, previewAction, targetTiles } from './combat';
 import { facingToward, heightAt, manhattan, samePoint } from './grid';
@@ -15,11 +15,19 @@ import type { Point, Unit } from './types';
  * - Hold applies to where a unit ends its move; attacks from a held tile are allowed.
  * - Rule 7 (cohesion) applies to melee units other than Tobin-with-intact-Lone-Blade.
  */
-export interface SquadMemory { squadTurns: number; squadSize: number }
-
-export function newSquadMemory(state: BattleState): SquadMemory {
-  return { squadTurns: 0, squadSize: state.units.filter((u) => u.team === 'player').length };
+export interface SquadMemory {
+  squadTurns: number;
+  squadSize: number;
+  /** Mill Ford's opening hold (rule 3) and Wren's hill. Off for the slice battles. */
+  millFord: boolean;
 }
+
+export function newSquadMemory(state: BattleState, opts: { millFord?: boolean } = {}): SquadMemory {
+  return { squadTurns: 0, squadSize: state.units.filter((u) => u.team === 'player' && !u.civilian).length, millFord: opts.millFord ?? true };
+}
+
+/** Slice spec §7: a squad unit ends next to a villager when a Raider is within this many tiles. */
+export const SCREEN_REACH = 6;
 
 const HILL: Point = { x: 2, y: 7 };
 export const TUNE = { braceReach: 4, mendGuardianBelow: 0.9, callaKeepAway: 4 };
@@ -27,6 +35,7 @@ const ok = (state: BattleState, team: string) => state.units.filter((u) => u.tea
 const isMelee = (u: Unit) => u.classId === 'sellsword';
 
 function holding(state: BattleState, mem: SquadMemory): boolean {
+  if (!mem.millFord) return false;
   const enemyCrossed = ok(state, 'enemy').some((e) => e.pos.y >= 5);
   return !enemyCrossed && mem.squadTurns < 6 * mem.squadSize;
 }
@@ -36,6 +45,7 @@ function nearestEnemyDist(state: BattleState, p: Point): number {
 }
 
 export function planSquadTurn(state: BattleState, unit: Unit, mem: SquadMemory): AiPlan {
+  if (unit.civilian) return planEscape(state, unit);
   mem.squadTurns += 1;
   const hold = holding(state, mem);
   const vow = vowOf(state, unit.id);
@@ -55,6 +65,17 @@ export function planSquadTurn(state: BattleState, unit: Unit, mem: SquadMemory):
     const wards = ok(state, 'player').filter((a) => a.classId === 'hedgeMage' || a.classId === 'bowhand');
     const near = tiles.filter((p) => wards.some((w) => manhattan(w.pos, p) === 1));
     if (near.length) tiles = near.sort((a, b) => nearestEnemyDist(state, a) - nearestEnemyDist(state, b));
+  }
+  // Slice §7: screen a threatened villager nobody is next to yet (not Calla, who keeps her distance).
+  if (unit.classId !== 'hedgeMage') {
+    const squad = ok(state, 'player').filter((a) => !a.civilian && a.id !== unit.id);
+    const exposed = ok(state, 'player')
+      .filter((c) => c.civilian && nearestEnemyDist(state, c.pos) <= SCREEN_REACH && !squad.some((a) => manhattan(a.pos, c.pos) === 1))
+      .sort((a, b) => nearestEnemyDist(state, a.pos) - nearestEnemyDist(state, b.pos) || a.order - b.order);
+    for (const c of exposed) {
+      const near = tiles.filter((p) => manhattan(p, c.pos) === 1);
+      if (near.length) { tiles = near; break; }
+    }
   }
   const stayFacing = () => facingToward(unit.pos, ok(state, 'enemy')[0]?.pos ?? unit.pos, unit.facing);
 
@@ -90,7 +111,10 @@ export function planSquadTurn(state: BattleState, unit: Unit, mem: SquadMemory):
   }
 
   // Rule 6: Tobin's Lone Blade scoring.
+  const mercyLive = vow?.vowId === 'mercy' && vow.status === 'intact' && !vow.frozen;
   const adjust = (p: ReturnType<typeof previewAction>, s: number) => {
+    // Slice §7: a Mercy-sworn unit never targets a yielding foe.
+    if (mercyLive && p.victims.some((v) => state.units.find((u) => u.id === v.unitId)?.yielding)) return 0;
     if (!loneBladeIntact) return s;
     const downs = p.victims.some((v) => v.downs);
     if (!downs) return s;

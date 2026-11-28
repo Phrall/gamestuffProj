@@ -1,12 +1,12 @@
-import { ABILITIES, RULES, type BattleSetup, type UnitSetup } from '../data';
+import { ABILITIES, RULES, SLICE, type BattleSetup, type UnitSetup } from '../data';
 import { abilityReady, inRange, previewAction } from './combat';
-import { facingToward, key, manhattan, samePoint, tileAt } from './grid';
+import { facingToward, isPassable, key, manhattan, samePoint, tileAt } from './grid';
 import { occupant, pathTo, pathTree } from './pathfinding';
 import { nextRandom } from './rng';
 import { hasPassive, teamMorale } from './stats';
 import { advance } from './timeline';
 import type { BattleEvent, Facing, GridMap, Point, Team, TwistState, Unit, VictimResult, VowState } from './types';
-import { onDowned, onIntercept, resolveVowsAtEnd } from './vows';
+import { onDowned, onIntercept, onSpared, onStrike, resolveVowsAtEnd } from './vows';
 
 export interface BattleState {
   map: GridMap;
@@ -51,6 +51,12 @@ function makeUnit(s: UnitSetup, order: number): Unit {
     order,
     ai: s.ai,
     traits: [...(s.traits ?? [])],
+    yieldBelow: s.yieldBelow,
+    yielding: false,
+    fled: false,
+    civilian: !!s.civilian,
+    escapeEdge: s.escapeEdge,
+    prefers: s.prefers,
   };
 }
 
@@ -103,7 +109,8 @@ function expireModifiers(state: BattleState, unitId: string, when: 'turnStart' |
 function checkWinner(state: BattleState): void {
   if (state.winner) return;
   for (const team of ['enemy', 'player'] as Team[]) {
-    const wiped = state.units.filter((u) => u.team === team).every((u) => u.status !== 'ok');
+    // Civilians (villagers) are not needed for the win or the loss (slice spec §5).
+    const wiped = state.units.filter((u) => u.team === team && !u.civilian).every((u) => u.status !== 'ok');
     // Units a spawn twist has yet to bring in count toward the win condition (slice spec §10).
     // If the side is cleared early, the wave is pulled forward: announced next turn, arriving the turn after.
     const pending = state.twists.filter((t) => !t.fired && t.def.effect === 'spawn' && t.units.some((s) => s.team === team));
@@ -150,6 +157,11 @@ export function startNextTurn(state: BattleState): Unit | null {
     u.moraleMove = teamMorale(state, u.team).move;
     emit(state, { type: 'turnStart', unitId: u.id });
     turnStartTraits(state, u);
+    // Yield (slice spec §4): checked at the start of the unit's turn.
+    if (u.yieldBelow !== undefined && !u.yielding && u.hp <= Math.floor(u.base.hp * u.yieldBelow)) {
+      u.yielding = true;
+      emit(state, { type: 'yield', unitId: u.id });
+    }
     return u;
   }
 }
@@ -225,7 +237,7 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
         });
       }
       if (a.debuff && t.hp > 0) {
-        t.modifiers.push({ move: a.debuff.move, source: abilityId, endsOn: 'turnEnd', endsWithUnit: t.id });
+        t.modifiers.push({ move: a.debuff.move, noWaitBonus: a.debuff.noWaitBonus, source: abilityId, endsOn: 'turnEnd', endsWithUnit: t.id });
       }
     }
     r.hpAfter = t.hp;
@@ -238,6 +250,7 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
   state.acted = true;
   emit(state, { type: 'ability', unitId, abilityId, target, preview, results });
   if (preview.interceptedBy) onIntercept(state, preview.interceptedBy, preview.victims[0]?.unitId ?? '', u.id, target);
+  onStrike(state, u, results);
 
   // Downs after the event so listeners see cause then effect.
   for (const r of results) {
@@ -254,16 +267,17 @@ function downUnit(state: BattleState, t: Unit, by: Unit | null): void {
   t.modifiers = t.modifiers.filter((m) => m.endsOn === 'battleEnd');
   emit(state, { type: 'downed', unitId: t.id, by: by?.id ?? null });
   const ev = RULES.morale.events;
-  changeMorale(state, t.team, ev.allyDowned, 'ally downed');
+  // Civilians move no morale either way (Programming's call; Game Design to confirm).
+  if (!t.civilian) changeMorale(state, t.team, ev.allyDowned, 'ally downed');
   if (t.leader) changeMorale(state, t.team, ev.leaderDefeated, 'leader defeated');
   if (by && by.team !== t.team) {
     by.defeats += 1;
     by.xp += 10;
-    changeMorale(state, by.team, ev.enemyDefeated, 'enemy defeated');
+    if (!t.civilian) changeMorale(state, by.team, ev.enemyDefeated, 'enemy defeated');
   }
   onDowned(state, t, by);
-  // Defeated enemies leave the board at once; only player units get a revive window (§8).
-  if (t.team === 'enemy') {
+  // Defeated enemies and civilians leave the board at once; only squad units get a revive window (§8).
+  if (t.team === 'enemy' || t.civilian) {
     t.status = 'lost';
     emit(state, { type: 'lost', unitId: t.id });
   }
@@ -275,10 +289,14 @@ export function endTurn(state: BattleState, facing?: Facing): void {
   const u = getUnit(state, state.activeId);
   if (facing) u.facing = facing;
   const c = RULES.ctAfterTurn;
-  u.ct = state.moved && state.acted ? c.movedAndActed : state.moved || state.acted ? c.oneOnly : c.waited;
+  // Torch: a Wait gives only the one-action CT.
+  const waited = u.modifiers.some((m) => m.noWaitBonus) ? c.oneOnly : c.waited;
+  u.ct = state.moved && state.acted ? c.movedAndActed : state.moved || state.acted ? c.oneOnly : waited;
   expireModifiers(state, u.id, 'turnEnd');
   emit(state, { type: 'turnEnd', unitId: u.id, facing: u.facing, ct: u.ct });
   state.activeId = null;
+  // A yielding foe or a civilian that ends its turn on its edge leaves the map (slice spec §4-5).
+  if ((u.yielding || u.civilian) && onEscapeEdge(state, u)) flee(state, u);
   checkWinner(state);
 }
 
@@ -288,7 +306,7 @@ export function endTurn(state: BattleState, facing?: Facing): void {
 function spawnTile(state: BattleState, want: Point, taken: Point[]): Point {
   const free = (p: Point) => {
     const t = tileAt(state.map, p);
-    return !!t && (t.kind === 'ground' || t.kind === 'ford') && !occupant(state, p) && !taken.some((q) => samePoint(p, q));
+    return isPassable(t) && !occupant(state, p) && !taken.some((q) => samePoint(p, q));
   };
   if (free(want)) return want;
   const { width: w, height: h } = state.map;
@@ -339,4 +357,34 @@ function turnStartTraits(state: BattleState, u: Unit): void {
       emit(state, { type: 'trait', unitId: u.id, traitId: 'hedgeLore', heal });
     }
   }
+}
+
+// ---------- Yield and escapes (slice spec §4-5) ----------
+
+/** Edge tiles a unit leaves by: civilians use their escape edge, yielding foes any edge. */
+export function escapeTiles(state: BattleState, u: Unit): Point[] {
+  const { width: w, height: h } = state.map;
+  const out: Point[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const edge = u.civilian && u.escapeEdge
+        ? (u.escapeEdge === 'N' && y === 0) || (u.escapeEdge === 'S' && y === h - 1) || (u.escapeEdge === 'W' && x === 0) || (u.escapeEdge === 'E' && x === w - 1)
+        : x === 0 || y === 0 || x === w - 1 || y === h - 1;
+      if (edge && isPassable(tileAt(state.map, { x, y }))) out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+const onEscapeEdge = (state: BattleState, u: Unit) => escapeTiles(state, u).some((p) => samePoint(p, u.pos));
+
+function flee(state: BattleState, u: Unit): void {
+  u.status = 'lost';
+  u.fled = true;
+  emit(state, { type: 'fled', unitId: u.id, civilian: u.civilian });
+  if (u.yielding) {
+    changeMorale(state, u.team, SLICE.yield.moraleOnFlee, 'foe fled');
+    onSpared(state, u);
+  }
+  checkWinner(state);
 }

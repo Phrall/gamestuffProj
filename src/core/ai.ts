@@ -1,5 +1,5 @@
 import { ABILITIES } from '../data';
-import type { BattleState } from './battle';
+import { escapeTiles, type BattleState } from './battle';
 import { abilityReady, isOffensive, previewAction, targetTiles } from './combat';
 import { facingToward, heightAt, key, manhattan } from './grid';
 import { occupant, pathTo, pathTree, reachableTiles } from './pathfinding';
@@ -15,6 +15,9 @@ export interface AiPlan {
   reason: string;
 }
 
+/** Score multipliers for Raider target preferences. */
+export const PREFER = { civilian: 1.5, backLine: 1.3 };
+
 const living = (state: BattleState, team: string) => state.units.filter((u) => u.team === team && u.status === 'ok');
 
 function nearestFoe(state: BattleState, unit: Unit, from: Point): Unit | undefined {
@@ -27,6 +30,8 @@ function nearestFoe(state: BattleState, unit: Unit, from: Point): Unit | undefin
  */
 export function planTurn(state: BattleState, unit: Unit): AiPlan {
   const stay: AiPlan = { unitId: unit.id, moveTo: unit.pos, action: null, facing: unit.facing, score: 0, reason: 'wait' };
+  // Yielding foes and civilians ignore all scoring and only path to their edge (slice spec §4-5).
+  if (unit.yielding || unit.civilian) return planEscape(state, unit);
   const foes = living(state, unit.team === 'player' ? 'enemy' : 'player');
   if (!foes.length) return stay;
 
@@ -69,6 +74,9 @@ export function expectedScore(state: BattleState, unit: Unit, p: ActionPreview):
     let s = (v.hit / 100) * v.damage;
     if (v.downs) s *= 2;
     if (victim.hp === lowestHp) s *= 1.2;
+    // Raiders prefer villagers, then the back line (slice spec §5). Weights are Programming's first guess.
+    if (unit.prefers?.includes('civilian') && victim.civilian) s *= PREFER.civilian;
+    else if (unit.prefers?.includes('backLine') && (victim.classId === 'bowhand' || victim.classId === 'hedgeMage')) s *= PREFER.backLine;
     score += victim.team === unit.team ? -s : s;
   }
   return score;
@@ -128,4 +136,23 @@ export function advance(state: BattleState, unit: Unit, allowed: Point[]): AiPla
   }
   const nf = nearestFoe(state, unit, dest)!;
   return { unitId: unit.id, moveTo: dest, action: null, facing: facingToward(dest, nf.pos, unit.facing), score: 0, reason: `advance toward ${nf.id}` };
+}
+
+/** Move the full Move toward the cheapest reachable escape tile; no action (slice spec §4-5). */
+export function planEscape(state: BattleState, unit: Unit): AiPlan {
+  const field = pathTree(state, unit, Infinity);
+  const goals = escapeTiles(state, unit).map((p) => field.get(key(p))).filter((n): n is NonNullable<typeof n> => !!n && (!occupant(state, n.pos) || occupant(state, n.pos)!.id === unit.id));
+  goals.sort((a, b) => a.cost - b.cost || a.pos.y - b.pos.y || a.pos.x - b.pos.x);
+  const goal = goals[0];
+  if (!goal) return { unitId: unit.id, moveTo: unit.pos, action: null, facing: unit.facing, score: 0, reason: 'no way out' };
+  const reach = new Set(reachableTiles(state, unit).map((n) => key(n.pos)));
+  let dest = unit.pos;
+  for (const p of pathTo(field, goal.pos)) {
+    if (!reach.has(key(p))) break;
+    if (!occupant(state, p)) dest = p;
+  }
+  const path = pathTo(field, goal.pos);
+  const i = path.findIndex((p) => p.x === dest.x && p.y === dest.y);
+  const next = path[i + 1] ?? goal.pos;
+  return { unitId: unit.id, moveTo: dest, action: null, facing: facingToward(dest, next, unit.facing), score: 0, reason: unit.civilian ? 'escape' : 'flee' };
 }

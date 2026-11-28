@@ -3,7 +3,7 @@ import type { BattleState } from './battle';
 import { DIRS, facingToward, heightAt, inBounds, isPassable, manhattan, tileAt } from './grid';
 import { occupant } from './pathfinding';
 import { effectiveStats, hardToKillReady, teamMorale } from './stats';
-import { guardianFor, loneBladeAtk, wouldBreakOwnVow } from './vows';
+import { guardianFor, loneBladeAtk, mercyBreaks, wouldBreakOwnVow } from './vows';
 import type { AbilityDef, ActionPreview, Point, Side, Unit, VictimPreview } from './types';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -162,7 +162,7 @@ export function previewAction(state: BattleState, actor: Unit, abilityId: string
       preview.victims.push(previewVictim(state, actor, a, from, u));
     }
   }
-  preview.breaksVow = wouldBreakOwnVow(state, actor, from, preview.victims.some((v) => v.downs && getTeam(state, v.unitId) !== actor.team));
+  preview.breaksVow = wouldBreakOwnVow(state, actor, from, preview.victims.some((v) => v.downs && getTeam(state, v.unitId) !== actor.team)) || mercyBreaks(state, actor, preview.victims);
   return preview;
 }
 

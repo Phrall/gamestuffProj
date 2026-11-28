@@ -6,7 +6,8 @@ import type { Point, Unit, VowId, VowState } from './types';
 // Vows (§9, §13.3, §13.4). Bulwark: Guard intercepts single-target attacks on adjacent
 // allies. Lone Blade: +1 Atk with no ally adjacent; progress on solo defeats.
 
-export function vowDef(id: VowId) {
+type VowDef = (typeof VOWS)['bulwark'] | (typeof VOWS)['loneBlade'] | (typeof VOWS)['mercy'];
+export function vowDef(id: VowId): VowDef & { name: string; goal: number; kept: { resolve: number }; broken: { shadow: number; surge: object } } {
   return VOWS[id];
 }
 
@@ -23,9 +24,9 @@ export function vowOf(state: BattleState, unitId: string): VowState | undefined 
 
 const liveVow = (v: VowState | undefined): v is VowState => !!v && v.status === 'intact' && !v.frozen;
 
-/** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. */
+/** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. Villagers don't count (QA, Nov 27). */
 export function adjacentAllies(state: BattleState, u: Unit, p: Point): Unit[] {
-  return state.units.filter((o) => o.id !== u.id && o.team === u.team && o.status === 'ok' && manhattan(o.pos, p) === 1);
+  return state.units.filter((o) => o.id !== u.id && o.team === u.team && o.status === 'ok' && !o.civilian && manhattan(o.pos, p) === 1);
 }
 
 /** Lone Blade while sworn (intact or fulfilled): +1 Atk with no ally adjacent to where the unit stands. */
@@ -96,8 +97,8 @@ export function onDowned(state: BattleState, t: Unit, by: Unit | null): void {
     own.frozen = true;
     emit(state, { type: 'vowFrozen', unitId: t.id, vowId: own.vowId });
   }
-  // Bulwark breaks when an ally within the radius is downed.
-  for (const g of state.units) {
+  // Bulwark breaks when an ally within the radius is downed. A villager falling doesn't break it (QA, Nov 27).
+  for (const g of t.civilian ? [] : state.units) {
     const v = state.vows[g.id];
     if (g.id === t.id || g.team !== t.team || !liveVow(v) || v.vowId !== 'bulwark') continue;
     if (manhattan(g.pos, t.pos) <= VOWS.bulwark.breakRadius) breakVow(state, g, v, `${t.name} fell`);
@@ -112,8 +113,35 @@ export function onDowned(state: BattleState, t: Unit, by: Unit | null): void {
   }
 }
 
+/** Mercy (slice spec §4): the sworn unit damaging a yielding foe breaks it. */
+export function mercyBreaks(state: BattleState, actor: Unit, victims: { unitId: string; damage: number }[]): boolean {
+  const v = state.vows[actor.id];
+  if (!liveVow(v) || v.vowId !== 'mercy') return false;
+  return victims.some((x) => {
+    const t = state.units.find((u) => u.id === x.unitId);
+    return x.damage > 0 && !!t?.yielding && t.team !== actor.team;
+  });
+}
+
+/** After an ability lands. */
+export function onStrike(state: BattleState, actor: Unit, results: { unitId: string; damage: number }[]): void {
+  if (!mercyBreaks(state, actor, results)) return;
+  const struck = state.units.find((u) => u.yielding && results.some((r) => r.unitId === u.id && r.damage > 0));
+  breakVow(state, actor, state.vows[actor.id]!, `struck ${struck?.name ?? 'a yielding foe'}`);
+}
+
+/** A yielding foe left the map alive: every live Mercy vow on the other side counts it. */
+export function onSpared(state: BattleState, foe: Unit): void {
+  for (const u of state.units) {
+    const v = state.vows[u.id];
+    if (u.team !== foe.team && liveVow(v) && v.vowId === 'mercy') progress(state, u, v);
+  }
+}
+
 /** Battle over: intact vows lapse, frozen ones resolve (§9, §13.3). */
 export function resolveVowsAtEnd(state: BattleState): void {
+  // Yielding foes still alive at the end count as spared (slice spec §4).
+  for (const f of state.units) if (f.yielding && f.status === 'ok') onSpared(state, f);
   for (const v of Object.values(state.vows)) {
     if (v.status !== 'intact') continue;
     // Kept at the end fires the same event and +10 morale as an early Kept, for the Reckoning.

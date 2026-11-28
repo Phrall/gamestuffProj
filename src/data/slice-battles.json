@@ -1,0 +1,126 @@
+{
+  "version": "0.1",
+  "_notes": "Slice battles 2-3 (vertical-slice-spec §4-6, §10). Programming transcribed this from the spec for Game Design to own and tune. Each map has its own legend: digits are ground height; other codes map to a tile kind, height and terrain id (the terrain id matches the Writer's ui.battle.terrain keys). 'overrides' sets a terrain id on single tiles. Squad start tiles are Programming's guesses inside the spec's deploy area.",
+  "statClasses": {
+    "raider": { "base": { "str": 4, "vit": 3, "dex": 6, "agi": 10, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0.5, "vit": 0.5, "dex": 0.5, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 5, "jump": 2, "weapon": "hatchet", "armor": "rags" },
+    "raiderSlinger": { "base": { "str": 3, "vit": 3, "dex": 8, "agi": 8, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0.5, "vit": 0.5, "dex": 0.75, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 4, "jump": 2, "weapon": "sling", "armor": "rags" },
+    "raiderChief": { "base": { "str": 6, "vit": 7, "dex": 7, "agi": 8, "int": 1, "wil": 3 }, "growthPerLevel": { "str": 0.5, "vit": 1, "dex": 0.5, "agi": 0.5, "int": 0, "wil": 0.25 }, "move": 4, "jump": 2, "weapon": "blade", "armor": "leather" },
+    "villager": { "base": { "str": 1, "vit": 3, "dex": 2, "agi": 4, "int": 1, "wil": 2 }, "growthPerLevel": { "str": 0, "vit": 0, "dex": 0, "agi": 0, "int": 0, "wil": 0 }, "move": 3, "jump": 1, "weapon": "none", "armor": "rags" }
+  },
+  "weapons": { "hatchet": { "atk": 2 }, "sling": { "atk": 1 }, "holyStaff": { "mag": 1 }, "none": {} },
+  "armor": { "rags": { "def": 0, "res": 0, "weight": 0 }, "duelCoat": { "def": 1, "res": 1, "weight": 0 } },
+  "abilities": {
+    "hack": { "type": "phys", "power": 4, "range": [1, 1], "cd": 0, "melee": true },
+    "torch": { "type": "phys", "power": 2, "range": [1, 1], "cd": 3, "melee": true, "debuff": { "noWaitBonus": true, "until": "targetNextTurnEnd" } },
+    "sling": { "type": "phys", "power": 4, "range": [2, 4], "cd": 0 }
+  },
+  "vows": {
+    "mercy": {
+      "name": "Mercy",
+      "oathLine": "I will leave one door open.",
+      "oathClass": "Pilgrim",
+      "shadowClass": "Executioner",
+      "goal": 1,
+      "progress": "spareYieldingFoe",
+      "breakOn": "damageYieldingFoe",
+      "whileSworn": { "res": 2 },
+      "kept": { "resolve": 2, "nextBattle": { "res": 2 } },
+      "broken": { "shadow": 2, "surge": { "atk": 3, "ignoresYield": true } },
+      "resolvesAt": "battleEnd"
+    }
+  },
+  "yield": { "moraleOnFlee": -3 },
+  "movement": { "marshCost": 2 },
+  "battles": {
+    "ashfordGreen": {
+      "name": "Ashford Green",
+      "squadLevel": 3,
+      "legend": {
+        "F": { "kind": "fence", "height": 0, "terrain": "fence" },
+        "X": { "kind": "wall", "height": 0, "terrain": "cottageWall" },
+        "W": { "kind": "ground", "height": 2, "terrain": "wellRim" },
+        "V": { "kind": "ground", "height": 0, "terrain": "ground" }
+      },
+      "rows": [
+        "1 1 1 0 0 0 0 1 1 1",
+        "1 X X 0 0 0 0 X X 1",
+        "1 X X 0 F F 0 X X 1",
+        "0 0 0 0 0 0 0 0 0 0",
+        "0 F 0 V W W V 0 F 0",
+        "0 F 0 V W W V 0 F 0",
+        "0 0 0 0 0 0 0 0 0 0",
+        "1 X X 0 0 0 0 X X 1",
+        "1 X X 0 0 0 0 X X 1",
+        "1 1 0 0 0 0 0 0 1 1"
+      ],
+      "squad": [
+        { "id": "maren", "pos": [4, 7], "facing": "N" },
+        { "id": "tobin", "pos": [6, 7], "facing": "N" },
+        { "id": "wren", "pos": [3, 8], "facing": "N" },
+        { "id": "calla", "pos": [4, 8], "facing": "N" }
+      ],
+      "enemies": [
+        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 4, "pos": [3, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderB", "name": "Raider", "statClass": "raider", "level": 4, "pos": [5, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 4, "pos": [8, 0], "facing": "S", "abilities": ["hack"], "prefers": ["civilian", "backLine"] },
+        { "id": "raiderD", "name": "Raider", "statClass": "raider", "level": 7, "pos": [1, 0], "facing": "S", "abilities": ["hack", "torch"], "prefers": ["civilian", "backLine"] },
+        { "id": "dunmore", "name": "Raider Chief Dunmore", "statClass": "raiderChief", "level": 7, "pos": [6, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
+      ],
+      "civilians": [
+        { "id": "villagerA", "name": "Villager", "statClass": "villager", "level": 1, "pos": [3, 5], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerB", "name": "Villager", "statClass": "villager", "level": 1, "pos": [6, 5], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerC", "name": "Villager", "statClass": "villager", "level": 1, "pos": [3, 6], "facing": "S", "escapeEdge": "S" },
+        { "id": "villagerD", "name": "Villager", "statClass": "villager", "level": 1, "pos": [6, 6], "facing": "S", "escapeEdge": "S" }
+      ],
+      "escapeReward": { "morale": 5, "crowns": 10 },
+      "twists": []
+    },
+    "saltmarshChapel": {
+      "name": "Saltmarsh Chapel",
+      "squadLevel": 4,
+      "legend": {
+        "M": { "kind": "marsh", "height": 0, "terrain": "marsh" },
+        "X": { "kind": "wall", "height": 0, "terrain": "chapelWall" },
+        "D": { "kind": "ground", "height": 1, "terrain": "chapelDoor" }
+      },
+      "rows": [
+        "M M M 0 0 0 0 M M M",
+        "M M 0 0 0 0 0 0 M M",
+        "M 0 0 X X X X 0 0 M",
+        "0 0 0 X 1 1 X 1 0 0",
+        "0 0 0 D 1 1 X 2 0 0",
+        "0 0 0 X 1 1 X 3 0 0",
+        "M 0 0 X X D X 0 0 M",
+        "M M 0 0 0 0 0 0 M M",
+        "M M M 0 0 0 0 M M M",
+        "M M M 0 0 0 0 M M M"
+      ],
+      "overrides": [
+        { "pos": [7, 3], "terrain": "bellStairs" },
+        { "pos": [7, 4], "terrain": "bellStairs" },
+        { "pos": [7, 5], "terrain": "bellStairs" }
+      ],
+      "squad": [
+        { "id": "maren", "pos": [3, 4], "facing": "W" },
+        { "id": "tobin", "pos": [5, 6], "facing": "S" },
+        { "id": "wren", "pos": [4, 4], "facing": "W" },
+        { "id": "calla", "pos": [5, 4], "facing": "S" }
+      ],
+      "enemies": [
+        { "id": "raiderA", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 3], "facing": "E", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderB", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 3], "facing": "W", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "raiderC", "name": "Raider", "statClass": "raider", "level": 3, "pos": [2, 0], "facing": "S", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+        { "id": "slingerA", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 3, "pos": [1, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
+        { "id": "slingerB", "name": "Raider Slinger", "statClass": "raiderSlinger", "level": 5, "pos": [8, 8], "facing": "N", "abilities": ["sling"], "yieldBelow": 0.25 },
+        { "id": "selka", "name": "Raider Chief Selka", "statClass": "raiderChief", "level": 4, "pos": [5, 0], "facing": "S", "abilities": ["strike", "cleave"], "leader": true }
+      ],
+      "civilians": [],
+      "twists": [
+        { "id": "secondWave", "firesAtTurn": 30, "announceTurnsAhead": 1, "effect": "spawn", "units": [
+          { "id": "raiderE", "name": "Raider", "statClass": "raider", "level": 3, "pos": [0, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 },
+          { "id": "raiderF", "name": "Raider", "statClass": "raider", "level": 3, "pos": [9, 9], "facing": "N", "abilities": ["hack", "torch"], "yieldBelow": 0.25 }
+        ] }
+      ]
+    }
+  }
+}
