@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ABILITIES, CLASSES, VOWS, millFordSetup } from '../data';
+import { ABILITIES, CLASSES, millFordSetup } from '../data';
 import { planTurn } from '../core/ai';
 import { activeUnit, createBattle, endTurn, getUnit, moveUnit, startNextTurn, useAbility, type BattleState } from '../core/battle';
 import { abilityReady, areaTiles, inRange, previewAction, targetTiles } from '../core/combat';
@@ -7,7 +7,7 @@ import { DIRS, FACINGS, facingToward, heightAt, key, samePoint, tileAt } from '.
 import { occupant, pathTo, pathTree, reachableTiles } from '../core/pathfinding';
 import { effectiveStats, teamMorale } from '../core/stats';
 import { forecast } from '../core/timeline';
-import { swearVow, vowDef } from '../core/vows';
+import { bulwarkReach, swearVow, vowDef } from '../core/vows';
 import { movePreview, type MovePreview, type Threat } from '../core/movePreview';
 import type { ActionPreview, BattleEvent, Facing, Point, Unit, VowId } from '../core/types';
 import { depthOf, pickTile, screenDir, tileCenter, topDiamond, viewDir, type IsoConfig, type Vec } from '../render/iso';
@@ -1591,7 +1591,7 @@ export default class BattleScene extends Phaser.Scene {
     for (const b of this.state.units) {
       const v = this.state.vows[b.id];
       if (!v || v.vowId !== 'bulwark' || v.status !== 'intact' || v.frozen || b.status !== 'ok') continue; // hidden when Kept, Broken or frozen
-      const r = VOWS.bulwark.breakRadius;
+      const r = bulwarkReach(b); // break radius = current Guard reach
       for (let y = b.pos.y - r; y <= b.pos.y + r; y++) {
         for (let x = b.pos.x - r; x <= b.pos.x + r; x++) {
           if (Math.abs(x - b.pos.x) + Math.abs(y - b.pos.y) <= r && tileAt(this.state.map, { x, y })) paint({ x, y }, 0xc9a35a, 0.55, true, 1.5);

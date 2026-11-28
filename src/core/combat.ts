@@ -2,9 +2,9 @@ import { ABILITIES, RULES } from '../data';
 import { JOB_DATA } from './jobs';
 import type { BattleState } from './battle';
 import { DIRS, facingToward, heightAt, inBounds, isPassable, manhattan, tileAt } from './grid';
-import { occupant } from './pathfinding';
+import { occupant, stepCost } from './pathfinding';
 import { effectiveStats, hardToKillReady, teamMorale } from './stats';
-import { guardianFor, loneBladeAtk, mercyBreaks, wouldBreakOwnVow } from './vows';
+import { adjacentAllies, guardianFor, loneBladeAtk, mercyBreaks, wouldBreakOwnVow } from './vows';
 import type { AbilityDef, ActionPreview, Point, Side, Unit, VictimPreview } from './types';
 
 /** Hard to Kill v3: the minimum share of max HP (percent) for the save (job-system.json). */
@@ -72,6 +72,7 @@ function affects(a: AbilityDef, actor: Unit, u: Unit): boolean {
   if (a.type === 'buff') return u.team === actor.team && u.status === 'ok';
   if (a.type === 'self') return u.id === actor.id;
   if (u.status !== 'ok') return false;
+  if (a.type === 'debuff') return u.team !== actor.team;
   if (u.team === actor.team) return !!a.area && !!a.hitsAllies;
   return true;
 }
@@ -120,6 +121,7 @@ export function hitChance(state: BattleState, actor: Unit, a: AbilityDef, from: 
     teamMorale(state, actor.team).hit +
     (a.hitBonus ?? 0) +
     (h.addHitBonus ? actor.base.hitBonus ?? 0 : 0) +
+    (a.hitBonusAlone && adjacentAllies(state, actor, from).length === 0 ? a.hitBonusAlone : 0) +
     effectiveStats(state, actor).hit;
   // §13.1: clamp, then floor; the roll uses the same integer.
   return Math.floor(clamp(hit, h.min, h.max));
@@ -150,6 +152,12 @@ export function previewAction(state: BattleState, actor: Unit, abilityId: string
   const a = ABILITIES[abilityId];
   const preview: ActionPreview = { actorId: actor.id, abilityId, from, target, victims: [], breaksVow: false };
   if (!a) return preview;
+  // Lunge strikes from the tile it steps onto.
+  if (a.lunge) {
+    const step = lungeStep(state, actor, from, target);
+    if (!step) return preview;
+    from = step;
+  }
   const tiles = a.type === 'self' ? [from] : areaTiles(state, a, from, target);
   for (const p of tiles) {
     const isCenter = p.x === target.x && p.y === target.y;
@@ -203,4 +211,13 @@ export function previewVictim(state: BattleState, actor: Unit, a: AbilityDef, fr
   if (survives) damage = u.hp - 1;
   const hpAfter = Math.max(0, u.hp - damage);
   return { ...base, hit: hitChance(state, actor, a, from, u, side), damage, hpAfter, downs: hpAfter === 0, pushedTo, ...(survives ? { survives } : {}) };
+}
+
+/** The tile a Lunge steps onto: 1 tile toward the target, free and enterable (slice spec §3). */
+export function lungeStep(state: BattleState, actor: Unit, from: Point, target: Point): Point | null {
+  if (manhattan(from, target) !== 2 || (from.x !== target.x && from.y !== target.y)) return null;
+  const mid = { x: (from.x + target.x) / 2, y: (from.y + target.y) / 2 };
+  const o = occupant(state, mid);
+  if (o && o.id !== actor.id) return null;
+  return stepCost(state, actor, from, mid) === null ? null : mid;
 }

@@ -22,6 +22,12 @@ export function vowOf(state: BattleState, unitId: string): VowState | undefined 
   return state.vows[unitId];
 }
 
+/** Hold the Line: extra Guard reach from active modifiers. */
+const guardReachBonus = (g: Unit) => g.modifiers.reduce((n, m) => n + (m.guardReach ?? 0), 0);
+
+/** Bulwark's current Guard reach. The break radius always equals it (Game Design, Nov 27), so Hold the Line widens both. */
+export const bulwarkReach = (g: Unit): number => VOWS.bulwark.guardRadius + guardReachBonus(g);
+
 const liveVow = (v: VowState | undefined): v is VowState => !!v && v.status === 'intact' && !v.frozen;
 
 /** Allies of `u` (status ok) orthogonally adjacent to point `p`, excluding `u` itself. Villagers don't count (QA, Nov 27). */
@@ -46,7 +52,7 @@ export function guardianFor(state: BattleState, attacker: Unit, target: Unit): U
     .filter((g) => {
       const v = state.vows[g.id];
       return g.id !== target.id && g.team === target.team && g.status === 'ok' && v?.vowId === 'bulwark' &&
-        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) <= VOWS.bulwark.guardRadius;
+        (v.status === 'intact' || v.status === 'fulfilled') && manhattan(g.pos, target.pos) <= bulwarkReach(g);
     })
     .sort((a, b) => a.order - b.order)[0];
 }
@@ -101,7 +107,7 @@ export function onDowned(state: BattleState, t: Unit, by: Unit | null): void {
   for (const g of t.civilian ? [] : state.units) {
     const v = state.vows[g.id];
     if (g.id === t.id || g.team !== t.team || !liveVow(v) || v.vowId !== 'bulwark') continue;
-    if (manhattan(g.pos, t.pos) <= VOWS.bulwark.breakRadius) breakVow(state, g, v, `${t.name} fell`);
+    if (manhattan(g.pos, t.pos) <= bulwarkReach(g)) breakVow(state, g, v, `${t.name} fell`);
   }
   // Lone Blade: progress on a solo defeat, breaks on a defeat with an ally adjacent.
   if (by && by.team !== t.team) {

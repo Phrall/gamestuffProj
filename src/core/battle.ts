@@ -1,5 +1,5 @@
 import { ABILITIES, RULES, SLICE, type BattleSetup, type UnitSetup } from '../data';
-import { abilityReady, inRange, previewAction } from './combat';
+import { abilityReady, inRange, lungeStep, previewAction } from './combat';
 import { facingToward, isPassable, key, manhattan, samePoint, tileAt } from './grid';
 import { occupant, pathTo, pathTree } from './pathfinding';
 import { nextRandom } from './rng';
@@ -156,10 +156,20 @@ export function startNextTurn(state: BattleState): Unit | null {
     expireModifiers(state, u.id, 'turnStart');
     u.moraleMove = teamMorale(state, u.team).move;
     emit(state, { type: 'turnStart', unitId: u.id });
+    // Ember ticks first; a unit it downs loses its turn.
+    if (!tickDots(state, u)) {
+      u.ct = 0;
+      emit(state, { type: 'turnEnd', unitId: u.id, facing: u.facing, ct: 0 });
+      state.activeId = null;
+      checkWinner(state);
+      continue;
+    }
     turnStartTraits(state, u);
     // Yield (slice spec §4): checked at the start of the unit's turn.
     if (u.yieldBelow !== undefined && !u.yielding && u.hp <= Math.floor(u.base.hp * u.yieldBelow)) {
       u.yielding = true;
+      // Ember ends when its target starts Yielding, so a burn can't break Mercy on its own (Game Design, Nov 27).
+      u.modifiers = u.modifiers.filter((m) => !m.dot);
       emit(state, { type: 'yield', unitId: u.id });
     }
     return u;
@@ -200,6 +210,12 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
   const preview = previewAction(state, u, abilityId, target);
   if (!preview.victims.length) throw new Error('no valid target');
 
+  // Lunge: step onto the tile next to the target first (slice spec §3).
+  if (a.lunge) {
+    const step = lungeStep(state, u, u.pos, target)!;
+    emit(state, { type: 'move', unitId, path: [step] });
+    u.pos = { ...step };
+  }
   if (a.type !== 'self' && !samePoint(u.pos, target)) u.facing = facingToward(u.pos, target, u.facing);
   const results: VictimResult[] = [];
   for (const v of preview.victims) {
@@ -231,14 +247,21 @@ export function useAbility(state: BattleState, unitId: string, abilityId: string
       const buff = a.buff;
       if (buff) {
         t.modifiers.push({
-          def: buff.def, res: buff.res, allFront: buff.allFront, source: abilityId,
+          def: buff.def, res: buff.res, allFront: buff.allFront, guardReach: buff.guardReach, source: abilityId,
           endsOn: buff.until === 'targetNextTurnEnd' ? 'turnEnd' : 'turnStart',
           endsWithUnit: buff.until === 'targetNextTurnEnd' ? t.id : u.id,
         });
       }
       if (a.debuff && t.hp > 0) {
-        t.modifiers.push({ move: a.debuff.move, noWaitBonus: a.debuff.noWaitBonus, source: abilityId, endsOn: 'turnEnd', endsWithUnit: t.id });
+        t.modifiers.push({ move: a.debuff.move, noWaitBonus: a.debuff.noWaitBonus, tauntBy: a.debuff.taunt ? u.id : undefined, source: abilityId, endsOn: 'turnEnd', endsWithUnit: t.id });
       }
+      // Ember: ticks at the start of the target's next turns (a new cast replaces the old one).
+      if (a.dot && t.hp > 0 && !t.yielding) {
+        t.modifiers = t.modifiers.filter((m) => m.source !== abilityId || !m.dot);
+        t.modifiers.push({ dot: { damage: a.dot.damage, left: a.dot.turns, by: u.id }, source: abilityId, endsOn: 'battleEnd', endsWithUnit: t.id });
+      }
+      // Feint: the target turns its back to the attacker.
+      if (a.turnsTarget && t.hp > 0) t.facing = facingToward(u.pos, t.pos, t.facing);
     }
     r.hpAfter = t.hp;
     results.push(r);
@@ -387,4 +410,23 @@ function flee(state: BattleState, u: Unit): void {
     onSpared(state, u);
   }
   checkWinner(state);
+}
+
+/** Damage-over-time ticks at turn start. Returns false if the unit went down. */
+function tickDots(state: BattleState, u: Unit): boolean {
+  for (const m of u.modifiers.filter((x) => x.dot)) {
+    const dot = m.dot!;
+    const damage = Math.min(u.hp, dot.damage);
+    u.hp -= damage;
+    dot.left -= 1;
+    emit(state, { type: 'dot', unitId: u.id, damage, hpAfter: u.hp });
+    if (dot.left <= 0) u.modifiers = u.modifiers.filter((x) => x !== m);
+    if (u.hp === 0) {
+      const by = state.units.find((x) => x.id === dot.by) ?? null;
+      u.modifiers = u.modifiers.filter((x) => !x.dot);
+      downUnit(state, u, by);
+      return false;
+    }
+  }
+  return true;
 }
