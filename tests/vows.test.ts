@@ -92,7 +92,7 @@ describe('Bulwark (§9)', () => {
     const s = battle(flatRows(7, 3), [
       unit('maren', 'player', 'sellsword', 1, 1, 'E', { stats: { ...DUMMY, hp: 200, spd: 1 } }),
       unit('calla', 'player', 'hedgeMage', 2, 1, 'N', { stats: { ...DUMMY, spd: 1 } }),
-      unit('wren', 'player', 'bowhand', 4, 1, 'N', { stats: { ...DUMMY, hp: 1, spd: 1 } }),
+      unit('wren', 'player', 'bowhand', 3, 1, 'N', { stats: { ...DUMMY, hp: 1, spd: 1 } }),
       unit('e', 'enemy', 'hedgeMage', 2, 2, 'N', { stats: { ...STRONG, mag: 1 } }),
     ]);
     swearVow(s, 'maren', 'bulwark');
@@ -100,21 +100,31 @@ describe('Bulwark (§9)', () => {
     useAbility(s, 'e', 'spark', { x: 2, y: 1 }); // Guard intercepts: goal met
     expect(s.vows.maren!.progress).toBe(VOWS.bulwark.goal);
     s.acted = false;
-    useAbility(s, 'e', 'spark', { x: 4, y: 1 }); // Wren, 3 tiles away (beyond Guard reach), falls
+    useAbility(s, 'e', 'thornsnare', { x: 3, y: 1 }); // Wren, 2 tiles away, falls to an area spell Guard can't take (v1.11 radius 2)
     expect(getUnit(s, 'wren').status).toBe('downed');
     expect(s.vows.maren!.status).toBe('broken');
   });
 
-  it('breaks when an ally beyond Guard reach but within break radius is downed: surge +3 Atk +1 Move, Guard ends', () => {
-    // v1.5: Guard covers allies within 2 tiles, so the fallen ally stands 3 away (breakRadius 3).
-    const s = battle(flatRows(6, 3), [
+  it('breaks when an ally within the break radius is downed: surge +3 Atk +1 Move, Guard ends', () => {
+    // v1.11: breakRadius 2 (= Guard reach), so the ally falls to an area spell Guard can't take.
+    const far = battle(flatRows(6, 3), [
       unit('maren', 'player', 'sellsword', 0, 1),
       unit('wren', 'player', 'bowhand', 3, 1, 'N', { stats: { ...DUMMY, hp: 1 } }),
       unit('e', 'enemy', 'hedgeMage', 5, 1, 'W', { stats: STRONG }),
     ]);
+    swearVow(far, 'maren', 'bulwark');
+    startNextTurn(far);
+    useAbility(far, 'e', 'spark', { x: 3, y: 1 }); // 3 tiles: outside the radius now
+    expect(getUnit(far, 'wren').status).toBe('downed');
+    expect(far.vows.maren!.status).toBe('intact');
+    const s = battle(flatRows(6, 3), [
+      unit('maren', 'player', 'sellsword', 0, 1),
+      unit('wren', 'player', 'bowhand', 2, 1, 'N', { stats: { ...DUMMY, hp: 1 } }),
+      unit('e', 'enemy', 'hedgeMage', 5, 1, 'W', { stats: STRONG }),
+    ]);
     swearVow(s, 'maren', 'bulwark');
     startNextTurn(s);
-    useAbility(s, 'e', 'spark', { x: 3, y: 1 });
+    useAbility(s, 'e', 'thornsnare', { x: 2, y: 1 });
     expect(s.vows.maren!.status).toBe('broken');
     const st = effectiveStats(s, getUnit(s, 'maren'));
     expect(st.atk).toBe(8 + 3);
